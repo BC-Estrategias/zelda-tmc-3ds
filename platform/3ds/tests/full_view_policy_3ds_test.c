@@ -98,7 +98,7 @@ int main(void) {
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
     inputs.contentHeight = 160;
 
-    /* Menus, dialogue/banners, outgoing transitions and invalid player
+    /* Menus, unsafe native overlays/banners, outgoing transitions and invalid player
      * generations fail closed to the established E2 canvas. */
     inputs.fixedCanvas = 1;
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);

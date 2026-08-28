@@ -53,9 +53,9 @@ Port3DSFullViewMode Port3DSFullViewPolicy_Decide(const Port3DSFullViewInputs* in
     } else if (inputs->fixedCanvas) {
         localReason = PORT_3DS_FULL_VIEW_REASON_FIXED_CANVAS;
     } else if (inputs->uiOverlay) {
-        /* Retail dialogue and room banners own a 240-pixel BG0 canvas. Keep
-         * their established E2 geometry instead of cutting or repositioning
-         * them in either experimental mode. */
+        /* Unsafe native windows and room banners own a 240-pixel canvas.
+         * Normal dialogue is excluded by the caller because the mode-1 BG0
+         * renderer remaps its live rectangle into the Full View viewport. */
         localReason = PORT_3DS_FULL_VIEW_REASON_FIXED_CANVAS;
     } else if (inputs->transitioning) {
         localReason = PORT_3DS_FULL_VIEW_REASON_TRANSITION;

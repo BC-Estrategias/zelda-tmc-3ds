@@ -1147,9 +1147,9 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
 }
 
 static int Port_WidescreenFullViewUiOverlayActive(void) {
-    if ((gMessage.state & MESSAGE_ACTIVE) != 0) {
-        return 1;
-    }
+    /* Normal dialogue is remapped by the mode-1 BG0 message-box path and can
+     * remain in Full View. Native GBA windows and room banners still fail
+     * closed because their masks/geometry have not been made viewport-aware. */
     if (Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl)) {
         return 1;
     }
@@ -1888,10 +1888,11 @@ void Port_Widescreen_UpdateShadows(void) {
      * interior) and the bottom border row outside the y-band (torn by the
      * HUD right-anchor remap). Clamp to the native canvas. */
     if ((gMessage.state & MESSAGE_ACTIVE) != 0) {
-        int x0 = (int)gMessage.textWindowPosX * 8;
-        int x1 = ((int)gMessage.textWindowPosX + (int)gMessage.textWindowWidth + 2) * 8;
-        int y0 = (int)gMessage.textWindowPosY * 8;
-        int y1 = ((int)gMessage.textWindowPosY + (int)gMessage.textWindowHeight + 2) * 8;
+        const Message* layout = gMessage.state == 1 ? &gMessage : &gTextRender.message;
+        int x0 = (int)layout->textWindowPosX * 8;
+        int x1 = ((int)layout->textWindowPosX + (int)layout->textWindowWidth + 2) * 8;
+        int y0 = (int)layout->textWindowPosY * 8;
+        int y1 = ((int)layout->textWindowPosY + (int)layout->textWindowHeight + 2) * 8;
         if (x0 < 0)
             x0 = 0;
         if (x1 > 240)
