@@ -12,6 +12,8 @@
  *   TMC_ROOMCAP_WARP="a,r,x,y,l"    target area,room,x,y,layer (decimal or 0x-hex)
  *   TMC_ROOMCAP_SETTLE=<frames>     frames to settle after warp (default 300)
  *   TMC_ROOMCAP_GORON_STAGE=1..6    exercise a regional Goron world event
+ *   TMC_ROOMCAP_DIALOGUE_ADVANCE=1 tap A through room-script dialogue
+ *   TMC_ROOMCAP_TRACE_ENTITIES=1   log active entities at capture time
  *   TMC_ROOMCAP_OUT=<path.png>      output PNG (default roomcap.png)
  */
 
@@ -706,7 +708,28 @@ void Port_ReproRoomCap_Tick(unsigned int frame) {
         }
     }
 
+    /* Drive the room's own cutscene rather than injecting a replacement
+     * message. This allows boss transformations to run through normally. */
+    if (warp_done && getenv("TMC_ROOMCAP_DIALOGUE_ADVANCE") &&
+        (gMessage.state & MESSAGE_ACTIVE) && gTextRender.renderStatus != 5 && frame % 40 < 2) {
+        extern void Port_Config_TestForceEdge(int input);
+        Port_Config_TestForceEdge(0 /* PORT_INPUT_A */);
+    }
+
     if (warp_done && cap_frame && (int)frame >= cap_frame) {
+        if (getenv("TMC_ROOMCAP_TRACE_ENTITIES")) {
+            for (unsigned i = 0; i < MAX_ENTITIES; ++i) {
+                Entity* e = &gEntities[i].base;
+                if (!e->next)
+                    continue;
+                unsigned slot = e->spriteAnimation[0];
+                fprintf(stderr, "[roomcap-entity] pool=%u kind=%u id=%u type=%u action=%u "
+                        "sprite=%u anim=%u frame=%u draw=%u pos=%d,%d,%d slot=%u vram=%u\n",
+                        i, e->kind, e->id, e->type, e->action, e->spriteIndex,
+                        e->animIndex, e->frameIndex, e->spriteSettings.draw,
+                        e->x.HALF.HI, e->y.HALF.HI, e->z.HALF.HI, slot, e->spriteVramOffset);
+            }
+        }
         /* TMC_ROOMCAP_SAVE: write a quicksave (state_quick.bin) at the warped
          * spot so it can be F6-loaded interactively, then exit. */
         if (getenv("TMC_ROOMCAP_SAVE")) {
