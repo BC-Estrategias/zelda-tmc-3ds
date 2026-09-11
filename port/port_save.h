@@ -53,6 +53,7 @@ int Port_Save_PreserveBeforeFuserRepair(void);
  * chest bit to its native European ordinal. */
 int Port_Save_PreserveBeforeSmithBottleFlagRepair(void);
 int Port_Save_PreserveBeforeGoronBottleRepair(void);
+int Port_Save_PreserveBeforeBombInventoryRepair(void);
 /* Preserve the complete active profile before the one-shot Cloud Tops fight
  * replay repair. Repeated checks during one profile activation reuse it. */
 int Port_Save_PreserveBeforeCloudTopsRepair(void);

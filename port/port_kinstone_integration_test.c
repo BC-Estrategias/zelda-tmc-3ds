@@ -366,6 +366,39 @@ static void TestRetailFicklenessKeepsOffer(void) {
           "retail fickleness never invokes migration or backup");
 }
 
+static void TestLegacyWallCursor(void) {
+    Entity entity = { 0 };
+    SaveFile before, expected;
+    BuildRomFixtures();
+    sFuserId = 0x68;
+    u8* record = Port_GetFuserFusionData(sFuserId);
+    record[5] = 0x29; record[6] = 0x25; record[7] = 0x2A; record[8] = 0;
+    memset(&gSave, 0, sizeof(gSave));
+    gSave.kinstones.fusedKinstones[0x29 >> 3] |= 1u << (0x29 & 7);
+    gSave.kinstones.fuserProgress[sFuserId] = 2;
+    gSave.kinstones.fuserOffers[sFuserId] = 0x25;
+    before = expected = gSave;
+    expected.kinstones.fuserProgress[sFuserId] = 1;
+    gActiveRegion = TMC_REGION_EU;
+    sRandomizerEnabled = false;
+    sRandomValue = 0;
+    CHECK(WriteBlankProfile("tmc_wall.sav"), "wall profile exists");
+    CHECK(Port_Save_SetActivePath("tmc_wall.sav"), "wall profile selected");
+    EEPROMConfigure(0x40);
+    Port_Save_BeginTransaction();
+    CHECK(GetFusionToOffer(&entity) == KINSTONE_NONE, "wall repair refuses unavailable backup");
+    CHECK(memcmp(&gSave, &before, sizeof(gSave)) == 0, "failed wall backup preserves entire save");
+    Port_Save_EndTransaction();
+    CHECK(GetFusionToOffer(&entity) == 0x25, "legacy wall offers its unfinished fusion");
+    CHECK(memcmp(&gSave, &expected, sizeof(gSave)) == 0, "only the wall cursor changes");
+    CHECK(GetFusionToOffer(&entity) == 0x25, "wall repair is idempotent");
+    gSave = before;
+    sRandomizerEnabled = true;
+    CHECK(GetFusionToOffer(&entity) == KINSTONE_NONE, "randomizer wall is untouched");
+    CHECK(memcmp(&gSave, &before, sizeof(gSave)) == 0, "randomizer rejection is byte exact");
+    sRandomizerEnabled = false;
+}
+
 static void RemoveTestDirectory(const char* directory, const char* oldDirectory) {
     DIR* dir;
     struct dirent* entry;
@@ -382,7 +415,7 @@ static void RemoveTestDirectory(const char* directory, const char* oldDirectory)
     rmdir(directory);
 }
 
-int main(void) {
+int main(int argc, char** argv) {
     char oldDirectory[1024];
     char tempTemplate[] = "/tmp/tmc-kinstone-integration-XXXXXX";
     char* tempDirectory;
@@ -398,6 +431,34 @@ int main(void) {
     TestBackupFailureIsTransactional();
     TestRetailFicklenessKeepsOffer();
     TestEenieCancellationRecovery();
+    TestLegacyWallCursor();
+
+    if (argc == 3) {
+        FILE* file = fopen(argv[1], "rb");
+        CHECK(file != NULL, "private ROM is readable");
+        if (!file) return 1;
+        fseek(file, 0, SEEK_END); gRomSize = (u32)ftell(file); rewind(file);
+        gRomData = malloc(gRomSize);
+        CHECK(gRomData && fread(gRomData, 1, gRomSize, file) == gRomSize, "ROM loaded");
+        fclose(file);
+        file = fopen(argv[2], "rb");
+        CHECK(file && fread(&gSave, 1, sizeof(gSave), file) == sizeof(gSave), "private snapshot loaded");
+        if (!file) return 1;
+        fclose(file);
+        SaveFile expected = gSave;
+        CHECK(WriteBlankProfile("tmc_report.sav"), "isolated report profile created");
+        CHECK(Port_Save_SetActivePath("tmc_report.sav"), "report profile selected");
+        EEPROMConfigure(0x40);
+        Entity entity = { 0 };
+        const u32 walls[] = { 0x66, 0x68, 0x69 };
+        for (u32 i = 0; i < 3; ++i) {
+            sFuserId = walls[i];
+            CHECK(GetFusionToOffer(&entity) == 0x25, "reported wall regains its pending offer against actual EU ROM");
+            expected.kinstones.fuserProgress[sFuserId] = 1;
+        }
+        CHECK(memcmp(&gSave, &expected, sizeof(gSave)) == 0, "actual report changes only three stale wall cursors");
+        free(gRomData);
+    }
 
     RemoveTestDirectory(tempDirectory, oldDirectory);
     if (sFailures != 0) return 1;

@@ -862,6 +862,7 @@ target("tmc_pc")
     add_files("port/port_upscale.c") -- xBRZ-style pixel-art upscaler
     add_files("port/port_save.c")        -- EEPROM save emulation
     add_files("port/port_bottle_compat.c", "port/port_cloud_tops_fight.c", "port/port_vaati_progress.c")
+    add_files("port/port_bomb_compat.c")
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
@@ -2526,4 +2527,20 @@ target("second_screen_state_test")
     add_includedirs(".", "port", "include", "platform/3ds/source")
     add_defines("PC_PORT", "TMC_3DS", "USA", "ENGLISH")
     add_files("port/port_second_screen_state.c", "port/port_second_screen_state_test.c")
+target_end()
+
+-- Legacy bomb ownership recovery and the actual bag reward path.
+target("bomb_compat_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "build/USA")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections", "-fdata-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_bomb_compat.c", "port/port_bomb_compat_test.c", "src/itemUtils.c", "src/itemMetaData.c")
 target_end()
