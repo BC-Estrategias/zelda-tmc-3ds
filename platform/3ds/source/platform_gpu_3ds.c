@@ -912,29 +912,34 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
  * independent of the gameplay aspect/filter and Full View settings. */
 static void DrawUpdateTop(void) {
     if (!Port_SecondScreen_3DS_UpdateOpen()) return;
+    /* GX display transfer is not a padded row copy: its output dimensions
+     * describe the transfer extent. Match the 512x256 texture on both sides;
+     * a 400x240 input produces corrupt tiled rows on hardware. Only the
+     * 400x240 viewport is painted and sampled. */
+    const size_t uploadBytes = TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t);
     if (!sUpdateReady) {
-        sUpdatePixels = linearAlloc(400*240*sizeof(uint32_t));
+        sUpdatePixels = linearAlloc(uploadBytes);
         if (!sUpdatePixels) return;
-        if (!C3D_TexInit(&sUpdateTexture,512,256,GPU_RGBA8)) {
+        if (!C3D_TexInit(&sUpdateTexture,TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT,GPU_RGBA8)) {
             linearFree(sUpdatePixels); sUpdatePixels=NULL; return;
         }
         C3D_TexSetFilter(&sUpdateTexture,GPU_NEAREST,GPU_NEAREST);
         C3D_TexSetWrap(&sUpdateTexture,GPU_CLAMP_TO_EDGE,GPU_CLAMP_TO_EDGE);
+        memset(sUpdatePixels, 0, uploadBytes);
         sUpdateReady=true;
     }
-    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels,400)) {
-        Platform3DS_CleanDataCache(sUpdatePixels,400*240*sizeof(uint32_t));
-        C3D_SyncDisplayTransfer(sUpdatePixels,GX_BUFFER_DIM(400,240),
-            sUpdateTexture.data,GX_BUFFER_DIM(512,256),
-            GX_TRANSFER_FLIP_VERT(0)|GX_TRANSFER_OUT_TILED(1)|
-            GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8)|GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8));
+    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels,TOP_TEXTURE_WIDTH)) {
+        Platform3DS_CleanDataCache(sUpdatePixels,uploadBytes);
+        C3D_SyncDisplayTransfer(sUpdatePixels,GX_BUFFER_DIM(TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT),
+            sUpdateTexture.data,GX_BUFFER_DIM(TOP_TEXTURE_WIDTH,TOP_TEXTURE_HEIGHT),
+            TextureTransfer());
     }
     C2D_Prepare();
     C3D_SetScissor(GPU_SCISSOR_DISABLE,0,0,0,0);
     C2D_TargetClear(sTopTarget,C2D_Color32(0,0,0,255));
     C2D_SceneBegin(sTopTarget);
     Tex3DS_SubTexture sub={.width=400,.height=240,.left=0,.top=1,
-        .right=400.f/512,.bottom=1-240.f/256};
+        .right=400.f/TOP_TEXTURE_WIDTH,.bottom=1-240.f/TOP_TEXTURE_HEIGHT};
     C2D_Image image={.tex=&sUpdateTexture,.subtex=&sub};
     C2D_DrawImageAt(image,0,0,0,NULL,1,1);
     ConfigureAbgrTextureEnv();

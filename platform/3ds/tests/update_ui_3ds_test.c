@@ -26,7 +26,7 @@ int main(int argc,char** argv) {
     extern void Port_LoadRom(const char*);
     Port_LoadRom(argv[1]);
     assert(Port_SecondScreenTheme_Ready());
-    static uint32_t bottom[320*240],top[400*240];
+    static uint32_t bottom[320*240],top[400*240], paddedTop[512*256];
     SSurf s={bottom,320,240,320}; TargetList targets={0}; SecondScreenSnapshot snap={0};
     Port_SecondScreenTheme_DrawBackdrop(bottom,320,240,320,0,0,320,240,2);
     PaintSettingsPanel(&s,&snap,&targets,10.f/3,10.f/3,320-10.f/3,204,1.f/3,2,SS_SETTINGS_ROOT,0,0,0,0);
@@ -52,6 +52,16 @@ int main(int argc,char** argv) {
         char file[50];snprintf(file,sizeof(file),"update-%d.raw",mode);Capture(file,bottom,320,240,320);
         assert(Port_SecondScreen_3DS_PaintUpdateTop(top,400));
         snprintf(file,sizeof(file),"top-%d.raw",mode);Capture(file,top,400,240,400);
+        /* Exercise the real GPU upload pitch, not just tightly packed preview
+         * pixels. Every visible row must match and padding must stay intact. */
+        for (unsigned i=0;i<512*256;i++) paddedTop[i]=0x13579bdf;
+        ++testStatus.revision;
+        assert(Port_SecondScreen_3DS_PaintUpdateTop(paddedTop,512));
+        for (unsigned y=0;y<256;y++) for (unsigned x=0;x<512;x++) {
+            if (y<240 && x<400) assert(paddedTop[y*512+x]==top[y*400+x]);
+            else assert(paddedTop[y*512+x]==0x13579bdf);
+        }
+        assert(!Port_SecondScreen_3DS_PaintUpdateTop(paddedTop,512));
     }
     testStatus.state=UPDATE_AVAILABLE;UpdateUI_Reset();
     assert(HandleUpdateTap(SS_ACT_UPDATE_ACTION,0)&&downloads==0&&sUpdateConfirm);
