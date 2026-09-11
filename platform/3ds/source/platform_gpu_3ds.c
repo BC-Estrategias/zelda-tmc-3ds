@@ -2,6 +2,7 @@
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "port_second_screen_3ds.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -30,6 +31,9 @@ bool Port_Config_FrameLog(void);
 
 static C3D_RenderTarget* sTopTarget;
 static C3D_RenderTarget* sBottomTarget;
+static C3D_Tex sUpdateTexture;
+static uint32_t* sUpdatePixels;
+static bool sUpdateReady;
 static C3D_Tex sTopTexture;
 static C3D_Tex sBottomTexture;
 static C3D_Tex sSharpBilinearTexture;
@@ -904,8 +908,42 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
 }
 
 
+/* The changelog always occupies the physical top screen at 400x240,
+ * independent of the gameplay aspect/filter and Full View settings. */
+static void DrawUpdateTop(void) {
+    if (!Port_SecondScreen_3DS_UpdateOpen()) return;
+    if (!sUpdateReady) {
+        sUpdatePixels = linearAlloc(400*240*sizeof(uint32_t));
+        if (!sUpdatePixels) return;
+        if (!C3D_TexInit(&sUpdateTexture,512,256,GPU_RGBA8)) {
+            linearFree(sUpdatePixels); sUpdatePixels=NULL; return;
+        }
+        C3D_TexSetFilter(&sUpdateTexture,GPU_NEAREST,GPU_NEAREST);
+        C3D_TexSetWrap(&sUpdateTexture,GPU_CLAMP_TO_EDGE,GPU_CLAMP_TO_EDGE);
+        sUpdateReady=true;
+    }
+    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels,400)) {
+        Platform3DS_CleanDataCache(sUpdatePixels,400*240*sizeof(uint32_t));
+        C3D_SyncDisplayTransfer(sUpdatePixels,GX_BUFFER_DIM(400,240),
+            sUpdateTexture.data,GX_BUFFER_DIM(512,256),
+            GX_TRANSFER_FLIP_VERT(0)|GX_TRANSFER_OUT_TILED(1)|
+            GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8)|GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8));
+    }
+    C2D_Prepare();
+    C3D_SetScissor(GPU_SCISSOR_DISABLE,0,0,0,0);
+    C2D_TargetClear(sTopTarget,C2D_Color32(0,0,0,255));
+    C2D_SceneBegin(sTopTarget);
+    Tex3DS_SubTexture sub={.width=400,.height=240,.left=0,.top=1,
+        .right=400.f/512,.bottom=1-240.f/256};
+    C2D_Image image={.tex=&sUpdateTexture,.subtex=&sub};
+    C2D_DrawImageAt(image,0,0,0,NULL,1,1);
+    ConfigureAbgrTextureEnv();
+    PlatformGpu3DS_InvalidateTopBorder();
+}
+
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
+    DrawUpdateTop();
     if (changed) {
         /* NOT a blocking transfer. citro3d source/renderqueue.c:417-430 shows
          * C3D_SyncDisplayTransfer only blocks when called OUTSIDE a frame:
@@ -1042,6 +1080,9 @@ void PlatformGpu3DS_InvalidateBottomTarget(void) {
 }
 
 void PlatformGpu3DS_Shutdown(void) {
+    if (sUpdateReady) C3D_TexDelete(&sUpdateTexture);
+    if (sUpdatePixels) linearFree(sUpdatePixels);
+    sUpdateReady=false; sUpdatePixels=NULL;
     if (!sReady) return;
     if (sFrameActive) {
         C2D_Flush();

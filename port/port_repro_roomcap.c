@@ -14,6 +14,9 @@
  *   TMC_ROOMCAP_GORON_STAGE=1..6    exercise a regional Goron world event
  *   TMC_ROOMCAP_DIALOGUE_ADVANCE=1 tap A through room-script dialogue
  *   TMC_ROOMCAP_TRACE_ENTITIES=1   log active entities at capture time
+ *   TMC_ROOMCAP_SAVEFILE=<path>    import a raw 0x500-byte SaveFile fixture
+ *   TMC_ROOMCAP_OPEN_CHEST=1       interact with a closed big chest
+ *   TMC_ROOMCAP_WRITE_SAVEFILE=<path> export the final SaveFile
  *   TMC_ROOMCAP_OUT=<path.png>      output PNG (default roomcap.png)
  */
 
@@ -34,6 +37,7 @@
 #include "subtask.h"
 #include "menu.h"
 #include "npc.h"
+#include "object.h"
 #include "port_rom.h"
 #include "port_gba_mem.h" /* gIoMem, gVram, gBgPltt, gObjPltt, gOamMem */
 #include "port_debug_actions.h"
@@ -192,6 +196,16 @@ void Port_ReproRoomCap_Tick(unsigned int frame) {
     if (!booted && gMain.task == TASK_FILE_SELECT && frame > 60) {
         SaveFile* sv = &gFileSelectState.saves[0];
         ResetSaveFile(0);
+        const char* fixture = getenv("TMC_ROOMCAP_SAVEFILE");
+        if (fixture && *fixture) {
+            FILE* f = fopen(fixture, "rb");
+            if (!f || fread(sv, 1, sizeof(*sv), f) != sizeof(*sv) || fgetc(f) != EOF ||
+                sv->invalid || !sv->initialized) {
+                fputs("[roomcap] invalid SaveFile fixture\n", stderr);
+                _Exit(4);
+            }
+            fclose(f);
+        }
         sv->initialized = 1;
         sv->name[0] = 'A'; /* non-empty: skip FinalizeSave's default-name copy */
         sv->saved_status.area_next = (u8)a;
@@ -199,6 +213,15 @@ void Port_ReproRoomCap_Tick(unsigned int frame) {
         sv->saved_status.start_pos_x = (s16)x;
         sv->saved_status.start_pos_y = (s16)y;
         sv->saved_status.layer = (u8)l;
+        /* Exercise normal migration backups against the imported profile,
+         * never an unrelated on-disk save. Use an isolated working directory. */
+        if (fixture && *fixture) {
+            extern u32 WriteSaveFile(u32 index, SaveFile* saveFile);
+            if (!WriteSaveFile(0, sv)) {
+                fputs("[roomcap] could not persist fixture\n", stderr);
+                _Exit(4);
+            }
+        }
         gFileSelectState.saveStatus[0] = 1; /* SAVE_VALID */
         SetActiveSave(0);
         if (getenv("TMC_ROOMCAP_STORY_SKIP")) {
@@ -220,6 +243,18 @@ void Port_ReproRoomCap_Tick(unsigned int frame) {
         if (rc == 1) {
             warp_done = 1;
             cap_frame = (int)(frame + settle);
+        }
+    }
+
+    /* Open a real big-chest entity after the imported fixture has settled. */
+    if (getenv("TMC_ROOMCAP_OPEN_CHEST") && warp_done && (int)frame == cap_frame - settle + 120) {
+        for (unsigned i = 0; i < MAX_ENTITIES; ++i) {
+            Entity* e = &gEntities[i].base;
+            if (e->next && e->kind == OBJECT && e->id == CHEST_SPAWNER && e->action == 3) {
+                e->interactType = INTERACTION_OPEN_CHEST;
+                fprintf(stderr, "[roomcap-chest] opening flag=%02x frame=%u\n", e->type2, frame);
+                break;
+            }
         }
     }
 
@@ -717,15 +752,31 @@ void Port_ReproRoomCap_Tick(unsigned int frame) {
     }
 
     if (warp_done && cap_frame && (int)frame >= cap_frame) {
+        const char* saveOut = getenv("TMC_ROOMCAP_WRITE_SAVEFILE");
+        if (saveOut && *saveOut) {
+            FILE* f = fopen(saveOut, "wb");
+            if (!f || fwrite(&gSave, 1, sizeof(gSave), f) != sizeof(gSave) || fclose(f) != 0)
+                _Exit(4);
+        }
         if (getenv("TMC_ROOMCAP_TRACE_ENTITIES")) {
+            fprintf(stderr, "[roomcap-save] bank=%x bottles=%u,%u,%u,%u contents=%02x,%02x,%02x,%02x\n",
+                    gArea.localFlagOffset,
+                    GetInventoryValue(0x1c), GetInventoryValue(0x1d),
+                    GetInventoryValue(0x1e), GetInventoryValue(0x1f),
+                    gSave.stats.bottles[0], gSave.stats.bottles[1],
+                    gSave.stats.bottles[2], gSave.stats.bottles[3]);
+            const TileEntity* te = GetCurrentRoomProperty(3);
+            for (unsigned i = 0; te && i < 256 && te[i].type; ++i)
+                fprintf(stderr, "[roomcap-tile] type=%u flag=%02x item=%02x subtype=%02x value=%u\n",
+                        te[i].type, te[i].localFlag, te[i]._2, te[i]._3, CheckLocalFlag(te[i].localFlag));
             for (unsigned i = 0; i < MAX_ENTITIES; ++i) {
                 Entity* e = &gEntities[i].base;
                 if (!e->next)
                     continue;
                 unsigned slot = e->spriteAnimation[0];
-                fprintf(stderr, "[roomcap-entity] pool=%u kind=%u id=%u type=%u action=%u "
+                fprintf(stderr, "[roomcap-entity] pool=%u kind=%u id=%u type=%u type2=%u action=%u "
                         "sprite=%u anim=%u frame=%u draw=%u pos=%d,%d,%d slot=%u vram=%u\n",
-                        i, e->kind, e->id, e->type, e->action, e->spriteIndex,
+                        i, e->kind, e->id, e->type, e->type2, e->action, e->spriteIndex,
                         e->animIndex, e->frameIndex, e->spriteSettings.draw,
                         e->x.HALF.HI, e->y.HALF.HI, e->z.HALF.HI, slot, e->spriteVramOffset);
             }

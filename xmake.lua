@@ -1282,6 +1282,31 @@ target_end()
 -- ====================
 -- EU sprite-table hole + byte-exact production OAM regression test.
 -- ====================
+target("bottle_compat_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_files("port/port_bottle_compat.c", "port/port_bottle_compat_test.c")
+target_end()
+
+target("chest_reward_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_chest_reward_test.c", "port/port_bottle_compat.c")
+    add_files("src/object/chestSpawner.c", "src/playerItemUtils.c")
+target_end()
+
 target("sprite_region_oam_test")
     set_kind("binary")
     set_languages("c11")

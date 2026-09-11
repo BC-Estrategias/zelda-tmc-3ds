@@ -855,6 +855,19 @@ void SetActiveSave(u32 idx) {
             }
         }
 
+        if (Port_GoronBottleNeedsRepair(&gSave, Rando_IsActive())) {
+            if (!Port_Save_PreserveBeforeGoronBottleRepair()) {
+                fprintf(stderr, "[SAVE] Refused Goron bottle repair: permanent backup failed.\n");
+            } else if (Port_RepairGoronBottle(&gSave, Rando_IsActive())) {
+                MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
+                if (WriteSaveFile(idx, &gSave) != 0) {
+                    fprintf(stderr, "[SAVE] Reopened the uncredited Goron bottle chest in slot %u.\n", idx);
+                } else {
+                    fprintf(stderr, "[SAVE] Reopened Goron chest in memory; persistence will retry on save.\n");
+                }
+            }
+        }
+
         if (Port_SmithBottleFlagsNeedRepair(&gSave, Rando_IsActive())) {
             if (!Port_Save_PreserveBeforeSmithBottleFlagRepair()) {
                 fprintf(stderr,

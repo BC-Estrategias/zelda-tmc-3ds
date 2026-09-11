@@ -158,6 +158,10 @@ enum {
     SS_ACT_LOAD_CONFIRM,
     SS_ACT_RANDO_CANCEL,
     SS_ACT_RANDO_CONFIRM,
+#ifdef TMC_3DS
+    SS_ACT_UPDATE_CHANNEL, SS_ACT_UPDATE_RELEASE, SS_ACT_UPDATE_ACTION,
+    SS_ACT_UPDATE_PREV, SS_ACT_UPDATE_NEXT,
+#endif
 };
 
 enum {
@@ -167,6 +171,9 @@ enum {
     SS_SETTINGS_DEVELOPER,
     SS_SETTINGS_OVERLAY,
     SS_SETTINGS_RANDOMIZER,
+#ifdef TMC_3DS
+    SS_SETTINGS_UPDATE,
+#endif
 };
 
 /* Settings rows, top to bottom. The second-screen-only toggles persist
@@ -1921,6 +1928,9 @@ static const char* SettingsPageTitle(int page) {
         case SS_SETTINGS_DEVELOPER: return "DEVELOPER";
         case SS_SETTINGS_OVERLAY: return "OVERLAY";
         case SS_SETTINGS_RANDOMIZER: return "RANDOMIZER";
+#ifdef TMC_3DS
+        case SS_SETTINGS_UPDATE: return "UPDATE";
+#endif
         default: return "SETTINGS";
     }
 }
@@ -2132,6 +2142,10 @@ static int GetSettingState(int row, char* out, int outCap) {
 /* Root and submenu compositor. Large menu-button plates provide the same
  * hierarchy and tap language as the sibling port; Minish Cap's decoded
  * parchment, chips, font, and palette keep it native to this game. */
+#ifdef TMC_3DS
+#include "../platform/3ds/source/update_ui_3ds.inc"
+#endif
+
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                                float ry0, float rx1, float ry1, float u, int32_t ts, int page, uint32_t tick,
                                uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
@@ -2152,11 +2166,11 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        static const char* const labels[4] = { "SCREEN", "GAMEPLAY", "DEVELOPER", "RANDOMIZER" };
-        static const uint8_t pages[4] = {
-            SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
+        static const char* const labels[5] = { "SCREEN", "GAMEPLAY", "DEVELOPER", "RANDOMIZER", "UPDATE" };
+        static const uint8_t pages[5] = {
+            SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER, SS_SETTINGS_UPDATE
         };
-        const int rootRows = 4;
+        const int rootRows = 5;
 #else
         static const char* const labels[3] = { "SCREEN", "GAMEPLAY", "DEVELOPER" };
         static const uint8_t pages[3] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER };
@@ -2172,6 +2186,12 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         return;
     }
 
+#ifdef TMC_3DS
+    if (page == SS_SETTINGS_UPDATE) {
+        PaintUpdatePanel(s, tl, x0, y0, x1, iy1, u, ts);
+        return;
+    }
+#endif
     if (page == SS_SETTINGS_DEVELOPER) {
         float gap = 10 * u;
         int rowCount = 3;
@@ -3054,6 +3074,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         return;
     }
 
+#ifdef TMC_3DS
+    if (HandleUpdateTap(hit.action, hit.arg)) return;
+#endif
     switch (hit.action) {
         case SS_ACT_TAB:
             UI_LOCK();
@@ -3069,6 +3092,13 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_LOCK();
             sUi.settingsPage = hit.arg;
             UI_UNLOCK();
+#ifdef TMC_3DS
+            if (hit.arg == SS_SETTINGS_UPDATE) {
+                UpdateUI_Reset();
+                UpdateStatus status; Updater_GetStatus(&status);
+                if (status.state != UPDATE_AVAILABLE) Updater_Check();
+            }
+#endif
             break;
         case SS_ACT_SETTINGS_BACK:
             UI_LOCK();

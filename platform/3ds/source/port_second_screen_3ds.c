@@ -114,7 +114,7 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
          * stale map fixes, armed items and submenu state must not cross a
          * title/file-select boundary even though the picture is replaced. */
         ResetIdleOnlyState();
-        BottomIdle3DS_Paint(pixels, width, height, strideInPixels, tick);
+        BottomIdle3DS_Paint(pixels, width, height, strideInPixels, tick, Platform3DS_IsNew3DS());
         FinishRefresh(refreshRequest);
         return refreshRequest;
     }
@@ -221,8 +221,8 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
 
     const bool idleSettings = __atomic_load_n(&sIdleSettingsOpen, __ATOMIC_ACQUIRE) != 0;
     if (!snap->inGame && !idleSettings) {
-        /* The title/file-select Triforce breathes. */
-        return 1;
+        /* Match ALttP PR #32: Old 3DS keeps a steady gold card. */
+        return Platform3DS_IsNew3DS();
     }
 
     int tab;
@@ -266,6 +266,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         /* Quest status and its two detail lists have no selection cursor. */
         return 0;
     }
+    if (settingsPage == SS_SETTINGS_UPDATE) return 1;
     if (settingsPage == SS_SETTINGS_OVERLAY) {
         /* Live diagnostics deliberately retain their slower refresh rate. */
         return 1;

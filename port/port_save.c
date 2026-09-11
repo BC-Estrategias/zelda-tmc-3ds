@@ -82,6 +82,7 @@ static char sActivePath[SAVE_FILENAME_MAX] = DEFAULT_SAVE_FILENAME;
  * E1 image must not create a new 8 KiB backup on every NPC update. */
 static char sFuserRepairPreservedPath[SAVE_FILENAME_MAX];
 static char sSmithBottleFlagRepairPreservedPath[SAVE_FILENAME_MAX];
+static char sGoronBottleRepairPreservedPath[SAVE_FILENAME_MAX];
 static char sCloudTopsRepairPreservedPath[SAVE_FILENAME_MAX];
 static char sVaatiProgressRepairPreservedPath[SAVE_FILENAME_MAX];
 static PortSaveStats sSaveStats;
@@ -1094,6 +1095,19 @@ int Port_Save_PreserveBeforeCloudTopsRepair(void) {
     return 1;
 }
 
+int Port_Save_PreserveBeforeGoronBottleRepair(void) {
+    if (!sEepromInited || sEepromWriteBlocked) return 0;
+    if (strcmp(sGoronBottleRepairPreservedPath, sActivePath) == 0) return 1;
+    if (sSaveTxnDepth != 0) return 0;
+    if (sEepromDirty) {
+        FlushEepromFile();
+        if (sEepromDirty) return 0;
+    }
+    if (!PreserveFileUnique(sActivePath, "pre-goron-bottle-repair")) return 0;
+    snprintf(sGoronBottleRepairPreservedPath, sizeof(sGoronBottleRepairPreservedPath), "%s", sActivePath);
+    return 1;
+}
+
 int Port_Save_PreserveBeforeVaatiProgressRepair(void) {
     if (!sEepromInited || sEepromWriteBlocked) return 0;
     if (strcmp(sVaatiProgressRepairPreservedPath, sActivePath) == 0) return 1;
@@ -1292,6 +1306,7 @@ int Port_Save_SetActivePath(const char* path) {
     sEepromWriteBlocked = 0;
     sFuserRepairPreservedPath[0] = '\0';
     sSmithBottleFlagRepairPreservedPath[0] = '\0';
+    sGoronBottleRepairPreservedPath[0] = '\0';
     sCloudTopsRepairPreservedPath[0] = '\0';
     sVaatiProgressRepairPreservedPath[0] = '\0';
     return 1;
@@ -1337,6 +1352,7 @@ int Port_Save_ClearActiveProfileData(void) {
     sFlushFailedLast = 0;
     sFuserRepairPreservedPath[0] = '\0';
     sSmithBottleFlagRepairPreservedPath[0] = '\0';
+    sGoronBottleRepairPreservedPath[0] = '\0';
     sCloudTopsRepairPreservedPath[0] = '\0';
 #ifdef PORT_SAVE_TEST
     sTestFailNextPreserve = 0;

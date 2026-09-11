@@ -301,16 +301,6 @@ static bool WritePalettes(const char* path) {
     return ok;
 }
 
-static void MakeTimestamp(char* stamp, size_t stampSize) {
-    time_t now = time(NULL);
-    struct tm* tmNow = now > 0 ? localtime(&now) : NULL;
-    if (tmNow) {
-        strftime(stamp, stampSize, "%Y%m%d-%H%M%S", tmNow);
-    } else {
-        snprintf(stamp, stampSize, "unknown-time");
-    }
-}
-
 static char sLastDumpDirectory[128];
 
 const char* Port_PPU_3DS_LastDumpDirectory(void) {
@@ -318,28 +308,9 @@ const char* Port_PPU_3DS_LastDumpDirectory(void) {
 }
 
 static bool CreateDumpDirectory(char* out, size_t outSize) {
-    if (!out || outSize == 0)
-        return false;
-    if (mkdir("dumps", 0777) != 0 && errno != EEXIST)
-        return false;
-
-    char stamp[32];
-    MakeTimestamp(stamp, sizeof(stamp));
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        if (attempt == 0) {
-            snprintf(out, outSize, "dumps/dump-%s", stamp);
-        } else {
-            snprintf(out, outSize, "dumps/dump-%s-%02d", stamp, attempt);
-        }
-        if (mkdir(out, 0777) == 0) {
-            snprintf(sLastDumpDirectory, sizeof(sLastDumpDirectory), "%s", out);
-            return true;
-        }
-        if (errno != EEXIST)
-            break;
-    }
-    out[0] = 0;
-    return false;
+    if (!Port_DumpState_CreateDirectory("dumps", out, outSize)) return false;
+    snprintf(sLastDumpDirectory, sizeof(sLastDumpDirectory), "%s", out);
+    return true;
 }
 
 static double TicksToMilliseconds(uint64_t ticks) {

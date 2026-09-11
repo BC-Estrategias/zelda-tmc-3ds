@@ -32,6 +32,7 @@ https://discord.gg/SMW49UMkw
 * On New Nintendo 3DS, the existing Wide + Pixel Perfect combination enables
   experimental Full View: compatible outdoor rooms render at 400x240, while
   supported interiors use a centered 200x120 view scaled exactly 2x.
+* In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA/3DSX installation.
 * Built-in Project Picori Randomizer support with separate normal and randomized save data.
 * Native stereo audio, persistent settings, reliable save handling, FPS tools, and diagnostic dumps for bug reports.
 
@@ -50,7 +51,7 @@ The bottom-screen worker avoids redundant static redraws while keeping touch inp
 1. Install the CIA with FBI, or use the 3DSX build with the Homebrew Launcher.
 
 ```text
-tmc-3ds-v1.3-E13.cia
+tmc-3ds-v1.3-E14.cia
 ```
 
 2. Create this folder on your SD card:
@@ -114,11 +115,25 @@ Gameplay dumps also include a validated `load-state.bin` checkpoint. To reproduc
 Settings > Developer > Load State
 ```
 
-The loader asks for confirmation, selects the newest `dump-*` folder, and rejects corrupted checkpoints or checkpoints
+New sessions use `000-dump-YYYYMMDD-HHMMSS`, `001-dump-YYYYMMDD-HHMMSS`, and so on.
+The sequence survives restarts and clock changes; an emptied dumps folder starts again at 000.
+
+The loader asks for confirmation, selects the newest numbered folder (or a legacy `dump-*` folder), and rejects corrupted checkpoints or checkpoints
 created with a different ROM region. Older dumps that only contain `save-state.bin` remain supported, but they resume
 from the saved checkpoint rather than the exact captured position.
 
 Please send the dump when reporting bugs whenever possible.
+
+## Updates
+
+Open **Settings > Update**. Select **Stable** or **Pre-release**, then tap the
+release version to read its changelog on the top screen. Use **Prev / Next** to
+turn pages. **Download Update** asks for confirmation before downloading and
+installing. Save your game first: the application closes after a successful update.
+
+CIA builds overwrite only this application's title after checking its ID and
+SHA-256 digest. 3DSX builds replace the launched file with rollback protection.
+Wi-Fi is required; connection failures leave the current installation available.
 
 ## Releases
 
@@ -155,8 +170,8 @@ chmod +x platform/3ds/build.sh
 Builds are generated under:
 
 ```text
-build-3ds/game/tmc-3ds-v1.3-E13.cia
-build-3ds/game/tmc-3ds-v1.3-E13.3dsx
+build-3ds/game/tmc-3ds-v1.3-E14.cia
+build-3ds/game/tmc-3ds-v1.3-E14.3dsx
 ```
 
 The build does not include or embed a ROM.

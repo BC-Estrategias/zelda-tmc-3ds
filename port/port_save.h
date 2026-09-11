@@ -52,6 +52,7 @@ int Port_Save_PreserveBeforeFuserRepair(void);
 /* Preserve the active profile before moving the pre-v1.2-E5 USA Smith bottle
  * chest bit to its native European ordinal. */
 int Port_Save_PreserveBeforeSmithBottleFlagRepair(void);
+int Port_Save_PreserveBeforeGoronBottleRepair(void);
 /* Preserve the complete active profile before the one-shot Cloud Tops fight
  * replay repair. Repeated checks during one profile activation reuse it. */
 int Port_Save_PreserveBeforeCloudTopsRepair(void);
