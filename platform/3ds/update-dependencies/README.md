@@ -11,7 +11,8 @@ when using build.sh). mbedTLS enables hardware entropy and CMAC, disables
 platform entropy, self-tests and timing; curl uses mbedTLS, HTTP/1.1 and
 synchronous DNS, with IPv6, Unix sockets, threaded resolver, NTLM helper,
 manual, pthreads, socketpair, LDAP and LDAPS disabled. Optional compression,
-IDN, HTTP/2 and SSH libraries are excluded. Jansson is static without tests.
+IDN, HTTP/2 and SSH libraries are excluded. When using devkitPro's installed
+curl, CMake also links its optional zlib dependency from that SDK. Jansson is static without tests.
 
 `platform/3ds/build.sh` builds these pinned sources automatically when the
 portlibs prefix does not provide them. To prepare a separate private prefix:
