@@ -2,6 +2,7 @@
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
+#include "ppu_gpu_3ds_budget.h"
 #include "port_second_screen_3ds.h"
 
 #include <3ds.h>
@@ -252,7 +253,8 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     GSPGPU_FlushDataCache(sTopUpload, topBytes);
     GSPGPU_FlushDataCache(sBottomUploads[0], bottomBytes);
     GSPGPU_FlushDataCache(sBottomUploads[1], bottomBytes);
-    if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) goto fail_linear;
+    if (!C3D_Init(old3dsProfile ? PPU_GPU3DS_COMMAND_BUFFER_BYTES : C3D_DEFAULT_CMDBUF_SIZE))
+        goto fail_linear;
     if (!C2D_Init(128)) {
         C3D_Fini();
         goto fail_linear;
@@ -815,7 +817,9 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
                              Port3DSFullViewMode mode, int cropX, int cropY) {
     if (!sReady || !pixels) return;
     const u8 frameFlags = (u8)(Port_Config_GpuFrameSync() ? C3D_FRAME_SYNCDRAW : 0);
-    if (!C3D_FrameBegin(frameFlags)) {
+    /* Preflight may already have opened the frame before selecting the CPU
+     * fallback. Reuse it so the freshly rendered image is actually uploaded. */
+    if (!sFrameActive && !C3D_FrameBegin(frameFlags)) {
         ++sStats.frameBeginFailures;
         if (Port_Config_FrameLog() &&
             (sStats.frameBeginFailures <= 3u ||

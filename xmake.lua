@@ -1960,6 +1960,14 @@ target("port_ppu_gpu_3ds_bench")
 target_end()
 
 
+target("ppu_gpu_3ds_budget_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("platform/3ds/source", "port/ppu/include")
+    add_files("platform/3ds/tests/ppu_gpu_3ds_budget_test.c")
+target_end()
+
 target("port_ppu_gpu_3ds_model_test")
     set_kind("binary")
     set_languages("c11")

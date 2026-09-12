@@ -654,6 +654,10 @@ void Port_PPU_3DS_WriteQuickDump(void) {
                 (unsigned long long)ppuGpuStats.parityFailures,
                 (unsigned long long)ppuGpuStats.differingPixels,
                 (unsigned long long)ppuGpuStats.structuralPixels);
+        fprintf(info, "PICA200 command budget fallbacks/last/max words: %llu/%lu/%lu\n",
+                (unsigned long long)ppuGpuStats.commandBudgetFallbacks,
+                (unsigned long)ppuGpuStats.lastCommandWords,
+                (unsigned long)ppuGpuStats.maxCommandWords);
         {
             /* Measured, not inferred: which phase of a paint actually costs
              * the 10-15 ms. */
