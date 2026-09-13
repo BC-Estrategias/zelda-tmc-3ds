@@ -275,7 +275,9 @@ void EnemyCreateDeathFX(Enemy* parent, u32 parentId, u32 fixedItem) {
                 CopyPosition(&(parent->base), &(deathFx2->base));
             }
             if (parent->enemyFlags & EM_FLAG_NO_DEATH_FX) {
-                deathFx2->unk6c |= 8;
+                if (deathFx2 != NULL) {
+                    deathFx2->unk6c |= 8;
+                }
                 DeleteEntity(&(parent->base));
                 return;
             }
@@ -290,7 +292,9 @@ void EnemyCreateDeathFX(Enemy* parent, u32 parentId, u32 fixedItem) {
                         deathFx2->unk6c |= 4;
                     }
                 }
-                deathFx2->base.parent = NULL;
+                if (deathFx2 != NULL) {
+                    deathFx2->base.parent = NULL;
+                }
                 DeleteThisEntity();
                 return;
             }

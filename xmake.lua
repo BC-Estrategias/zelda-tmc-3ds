@@ -2496,6 +2496,27 @@ target("subtask_affine_test")
     add_files("port/port_subtask_affine_test.c", "src/subtask.c", "src/code_0805EC04.c")
 target_end()
 
+-- Production palette reservation and enemy death allocation regressions.
+for _, spec in ipairs({
+    {"palette_release_test", "port/port_palette_release_test.c", "src/color.c"},
+    {"enemy_death_fx_test", "port/port_enemy_death_fx_test.c", "src/enemyUtils.c"}
+}) do
+    target(spec[1])
+        set_kind("binary")
+        set_languages("c11")
+        set_targetdir("build/pc")
+        add_includedirs(".", "port", "include")
+        add_defines("PC_PORT", "USA", "ENGLISH")
+        add_cflags("-ffunction-sections")
+        if is_plat("macosx") then
+            add_ldflags("-Wl,-dead_strip")
+        else
+            add_ldflags("-Wl,--gc-sections")
+        end
+        add_files(spec[2], spec[3])
+    target_end()
+end
+
 target("gfx_slots_test")
     set_kind("binary")
     set_languages("c11")
