@@ -24,6 +24,16 @@ fi
 
 export DEVKITPRO
 
+if [[ -z "${UPDATE_DEPS_ROOT:-}" ]]; then
+  # This fork links RetroAchievements against its in-tree mbedTLS 3.x.
+  # Always build curl against that exact ABI instead of using a potentially
+  # incompatible devkitPro portlibs curl built against mbedTLS 2.x.
+  UPDATE_DEPS_ROOT="${ROOT}/build-3ds/update-deps/prefix"
+  if [[ ! -f "${UPDATE_DEPS_ROOT}/lib/libcurl.a" || ! -f "${UPDATE_DEPS_ROOT}/lib/libjansson.a" ]]; then
+    python3 "${ROOT}/platform/3ds/tools/build_update_deps.py" "${ROOT}/build-3ds/update-deps"
+  fi
+fi
+
 # Keep the small 3DS ABI correction for the pinned rcheevos source reproducible
 # without requiring a fork of the upstream dependency. The test also makes the
 # operation safe to repeat in an existing working tree.
@@ -35,7 +45,8 @@ fi
 
 cmake -S "${ROOT}/platform/3ds" -B "${BUILD}" \
   -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
-  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_BUILD_TYPE=Release \
+  -DUPDATE_DEPS_ROOT="${UPDATE_DEPS_ROOT:-${DEVKITPRO}/portlibs/3ds}"
 cmake --build "${BUILD}" --parallel "${TMC3DS_JOBS:-4}"
 
 if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then

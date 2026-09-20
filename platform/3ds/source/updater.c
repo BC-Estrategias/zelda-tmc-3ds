@@ -1,6 +1,8 @@
 #include "updater.h"
 #include "platform_3ds.h"
+#include "port_retroachievements_3ds.h"
 #include <3ds.h>
+#include <psa/crypto.h>
 #include <curl/curl.h>
 #include <mbedtls/sha256.h>
 #include <malloc.h>
@@ -116,6 +118,8 @@ static int transfer_progress(void *p, curl_off_t total, curl_off_t now, curl_off
 }
 static bool fetch(const char *url, Transfer *t) {
   CURL *c = curl_easy_init(); if (!c) return false;
+  char curl_error[CURL_ERROR_SIZE] = {0};
+  curl_easy_setopt(c, CURLOPT_ERRORBUFFER, curl_error);
   curl_easy_setopt(c, CURLOPT_URL, url);
   curl_easy_setopt(c, CURLOPT_USERAGENT, "Minish-Cap-3DS/" TMC_PORT_VERSION);
   curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
@@ -147,7 +151,8 @@ static bool fetch(const char *url, Transfer *t) {
   }
   curl_easy_cleanup(c);
   if (code != CURLE_OK || http != 200) {
-    UpdateLog("Updater transfer failed: curl=%d http=%ld", code, http);
+    UpdateLog("Updater transfer failed: curl=%d (%s) http=%ld detail=%s",
+      code, curl_easy_strerror(code), http, curl_error[0] ? curl_error : "(none)");
     return false;
   }
   return true;
@@ -160,13 +165,13 @@ static bool enough_space(uint64_t required) {
 static bool verify_file(void) {
   FILE *f = fopen(UPDATE_PART, "rb"); if (!f) return false;
   mbedtls_sha256_context sha; mbedtls_sha256_init(&sha);
-  bool ok = mbedtls_sha256_starts_ret(&sha, 0) == 0;
+  bool ok = mbedtls_sha256_starts(&sha, 0) == 0;
   unsigned char *data = malloc(UPDATE_IO_SIZE), digest[32]; size_t total = 0; ssize_t n = 0;
   ok = ok && data != NULL;
   while (ok && (n = read(fileno(f), data, UPDATE_IO_SIZE)) > 0) {
-    total += n; ok = !cancelled() && mbedtls_sha256_update_ret(&sha, data, n) == 0;
+    total += n; ok = !cancelled() && mbedtls_sha256_update(&sha, data, n) == 0;
   }
-  ok = ok && n >= 0 && total == release.size && mbedtls_sha256_finish_ret(&sha, digest) == 0;
+  ok = ok && n >= 0 && total == release.size && mbedtls_sha256_finish(&sha, digest) == 0;
   fclose(f); free(data); mbedtls_sha256_free(&sha);
   char hex[65]; for (int i = 0; i < 32 && ok; i++) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
   return ok && !strcmp(hex, release.sha256);
@@ -221,18 +226,26 @@ static bool install_3dsx(void) {
   remove(backup); return true;
 }
 static void run_job(void *arg) {
-  void *soc_buffer = NULL; bool soc_ready = false, curl_ready = false, ac_ready = false, ssl_ready = false;
+  void *soc_buffer = NULL; bool soc_owned = false, ps_owned = false, curl_ready = false, ac_ready = false;
   bool ok = false; Transfer t = {0};
   UpdateStatus s; Updater_GetStatus(&s);
   if (R_FAILED(acInit())) goto done;
   ac_ready = true; u32 wifi = 0;
   if (R_FAILED(ACU_GetWifiStatus(&wifi)) || !wifi) { publish(UPDATE_ERROR, "NO WI-FI CONNECTION"); goto done; }
-  soc_buffer = memalign(4096, 1024 * 1024);
-  if (!soc_buffer || R_FAILED(socInit(soc_buffer, 1024 * 1024))) goto done;
-  soc_ready = true;
-  // The linked mbedTLS entropy callback needs the SSL service on both models.
-  if (R_FAILED(sslcInit(0))) { publish(UPDATE_ERROR, "TLS SERVICE FAILED"); goto done; }
-  ssl_ready = true;
+  /* RetroAchievements may already own libctru SOC for its HTTPS session.
+   * Reuse that service instead of calling socInit twice. When RA is offline,
+   * the updater owns a temporary SOC buffer for this job. */
+  if (!Port_RetroAchievements3DS_NetworkReady()) {
+    soc_buffer = memalign(4096, 1024 * 1024);
+    if (!soc_buffer || R_FAILED(socInit(soc_buffer, 1024 * 1024))) goto done;
+    soc_owned = true;
+    if (R_FAILED(psInit())) goto done;
+    ps_owned = true;
+    if (psa_crypto_init() != PSA_SUCCESS) goto done;
+  }
+  /* libcurl uses the in-process mbedTLS backend in this build. Its entropy
+   * hook uses ps:ps, not the 3DS ssl:C service. Initializing ssl:C here mixes
+   * two independent TLS stacks and is unnecessary. */
   if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) goto done;
   curl_ready = true;
   if (!download_job) {
@@ -272,8 +285,8 @@ done:
   free(t.data);
   if (download_job) remove(UPDATE_PART);
   if (curl_ready) curl_global_cleanup();
-  if (ssl_ready) sslcExit();
-  if (soc_ready) socExit();
+  if (ps_owned) psExit();
+  if (soc_owned) socExit();
   free(soc_buffer);
   if (ac_ready) acExit();
   Updater_GetStatus(&s);
@@ -325,7 +338,9 @@ void Updater_Init(const char *path) {
       strlen(path) > 5 && !strcmp(path + strlen(path) - 5, ".3dsx")) strcpy(launch_file, path);
   struct stat st;
   if (stat(CHANNEL_FILE, &st) != 0) rename(CHANNEL_FILE ".bak", CHANNEL_FILE);
-  FILE *f = fopen(CHANNEL_FILE, "rb"); if (f) { status.prerelease = fgetc(f) == '1'; fclose(f); }
+  FILE *f = fopen(CHANNEL_FILE, "rb");
+  if (f) { status.prerelease = fgetc(f) == '1'; fclose(f); }
+  else if (strchr(TMC_PORT_VERSION, '-') != NULL) { status.prerelease = true; }
   Updater_Check();
 }
 void Updater_Shutdown(void) {
