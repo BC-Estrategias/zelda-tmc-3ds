@@ -48,6 +48,7 @@ mbedtls_ms_time_t mbedtls_ms_time(void) { return (mbedtls_ms_time_t)osGetTime();
 int mbedtls_hardware_poll(void* p, unsigned char* out, size_t len, size_t* olen) { (void)p; if (R_FAILED(PS_GenerateRandomBytes(out, len))) return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED; *olen = len; return 0; }
 static void Error(const char* stage, int code) { snprintf(sLastError, sizeof(sLastError), "%s %04X", stage, (unsigned)(-code)); }
 const char* Port_RetroAchievements3DS_LastError(void) { return sLastError; }
+int Port_RetroAchievements3DS_NetworkReady(void) { return sReady != 0; }
 
 static int SendCb(void* p, const unsigned char* b, size_t n) { int r = send(*(int*)p, b, n, 0); return r >= 0 ? r : (errno == EAGAIN ? MBEDTLS_ERR_SSL_WANT_WRITE : MBEDTLS_ERR_NET_SEND_FAILED); }
 static int RecvCb(void* p, unsigned char* b, size_t n) { int r = recv(*(int*)p, b, n, 0); return r > 0 ? r : (r == 0 ? MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY : (errno == EAGAIN ? MBEDTLS_ERR_SSL_WANT_READ : MBEDTLS_ERR_NET_RECV_FAILED)); }
