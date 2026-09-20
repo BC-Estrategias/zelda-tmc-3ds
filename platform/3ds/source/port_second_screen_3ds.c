@@ -114,7 +114,7 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
          * stale map fixes, armed items and submenu state must not cross a
          * title/file-select boundary even though the picture is replaced. */
         ResetIdleOnlyState();
-        BottomIdle3DS_Paint(pixels, width, height, strideInPixels, tick);
+        BottomIdle3DS_Paint(pixels, width, height, strideInPixels, tick, true);
         FinishRefresh(refreshRequest);
         return refreshRequest;
     }

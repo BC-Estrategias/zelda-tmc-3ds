@@ -498,3 +498,15 @@ bool Port_Config_3DSFullViewComboEnabled(void) {
     return Platform3DS_IsNew3DS() && aspect == PORT_3DS_ASPECT_WIDE &&
            style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
 }
+
+/* Upstream E19 exposes these experimental tuning hooks. This release keeps
+ * their measured-safe defaults while preserving the established settings UI. */
+int Port_Config_AudioCore(void) { return -1; }
+int Port_Config_BottomCore(void) { return -1; }
+bool Port_Config_VblankPhaseLock(void) { return false; }
+int Port_Config_AppCpuLimit(void) { return 0; }
+bool Port_Config_AudioDsp(void) { return true; }
+bool Port_Config_AudioDspPcm(void) { return true; }
+bool Port_Config_AudioDspInterpLinear(void) { return false; }
+bool Port_Config_SpeakerEq(void) { return false; }
+int Port_Config_SpeakerEqHz(void) { return 0; }

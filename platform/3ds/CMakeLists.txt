@@ -82,6 +82,7 @@ set(TMC_PORT_SOURCES
     port/port_script_addrs.c port/port_offset_remap.c port/port_rom.c
     port/port_region_data.c
     port/port_bottle_compat.c
+    port/port_bomb_compat.c
     port/port_cloud_tops_fight.c
     port/port_vaati_progress.c
     port/port_stubs.c port/stubs_autogen.c port/data_stubs_autogen.c
@@ -99,7 +100,7 @@ set(TMC_PORT_SOURCES
     port/port_filter.c port/port_animation.c port/port_math.c
     port/port_text_render.c port/port_gameplay_stubs.c port/port_m4a_stubs.c
     port/port_room_funcs.c port/port_script_funcs.c port/port_analog_movement.c
-    port/port_m4a_backend.cpp port/generated_sounds_embed.cpp
+    port/port_m4a_backend.cpp port/port_m4a_mixdown.c port/generated_sounds_embed.cpp
     port/ppu/src/virtuappu.c port/ppu/src/mode1.c
     port/rando/rando.cpp port/rando/rando_logic.cpp
     port/rando/rando_save.c port/rando/rando_runtime.c
@@ -109,22 +110,35 @@ set(TMC_PORT_SOURCES
 )
 list(TRANSFORM TMC_PORT_SOURCES PREPEND "${TMC_ROOT}/")
 
+# GPU PPU path from the upstream E19 work. The fast path is used on New 3DS
+# while the existing software path remains available for Old 3DS.
+ctr_add_shader_library(ppu_gpu_3ds_shader source/ppu_gpu_3ds.v.pica)
+dkp_add_embedded_binary_library(ppu_gpu_3ds_shader_bin ppu_gpu_3ds_shader)
+
 add_executable(tmc-3ds
     ${TMC_ENGINE_SOURCES}
     ${TMC_ACTOR_SOURCES}
     ${TMC_PORT_SOURCES}
     ${RCHEEVOS_SOURCES}
     ${AGBPLAY_SOURCES}
+    source/updater_disabled_3ds.c
     source/main_3ds.c
+    source/arm11_fast_mem.c
+    source/ndsp_pcm_offload.c
+    source/ndsp_psg_offload.c
     source/platform_3ds.c
     source/old3ds_frame_pacer.c
     source/top_view_3ds.c
     source/platform_gpu_3ds.c
     source/bottom_idle_3ds.c
     source/bottom_frame_state_3ds.c
+    source/bottom_map_anim_3ds.c
+    source/speaker_eq_3ds.c
     source/port_second_screen_3ds.c
     source/port_second_screen_sync_3ds.c
     source/port_ppu_3ds.c
+    source/port_ppu_gpu_3ds_model.c
+    source/port_ppu_gpu_3ds.c
     source/port_audio_3ds.c
     source/port_config_3ds.c
     source/port_retroachievements_3ds.c
@@ -144,7 +158,7 @@ target_include_directories(tmc-3ds PRIVATE
 
 target_compile_definitions(tmc-3ds PRIVATE
     PC_PORT NON_MATCHING USE_HDMA TMC_3DS MULTI_REGION USA ENGLISH REVISION=0
-    MODE1_GBA_WIDTH=400 MODE1_GBA_HEIGHT=240
+    MODE1_GBA_WIDTH=400 MODE1_GBA_HEIGHT=240 PPU_GPU3DS_PROFILE
     RC_CLIENT_SUPPORTS_HASH RC_HASH_NO_DISC RC_HASH_NO_ZIP RC_HASH_NO_ENCRYPTED
     TMC_PORT_VERSION="${TMC_3DS_VERSION}" TMC_PC_VERSION="${TMC_3DS_VERSION}"
 )
@@ -173,15 +187,18 @@ set_source_files_properties(
     "${TMC_ROOT}/port/port_second_screen_theme.c"
     "${CMAKE_CURRENT_LIST_DIR}/source/platform_gpu_3ds.c"
     "${CMAKE_CURRENT_LIST_DIR}/source/port_ppu_3ds.c"
+    "${CMAKE_CURRENT_LIST_DIR}/source/port_ppu_gpu_3ds_model.c"
+    "${CMAKE_CURRENT_LIST_DIR}/source/port_ppu_gpu_3ds.c"
     PROPERTIES COMPILE_OPTIONS "-flto;-fno-semantic-interposition"
 )
 set_source_files_properties(
     "${TMC_ROOT}/port/port_m4a_backend.cpp"
+    "${TMC_ROOT}/port/port_m4a_mixdown.c"
     ${AGBPLAY_SOURCES}
     PROPERTIES COMPILE_OPTIONS "-flto;-fno-semantic-interposition;-ffast-math"
 )
 target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections)
-target_link_libraries(tmc-3ds PRIVATE citro2d citro3d ctru m mbedtls mbedx509 mbedcrypto)
+target_link_libraries(tmc-3ds PRIVATE citro2d citro3d mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 file(MAKE_DIRECTORY "${TMC_ROMFS}")

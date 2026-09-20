@@ -30,11 +30,7 @@ int Port_SecondScreen_3DS_LoadConfirmationActive(void);
 void Port_SecondScreen_3DS_ConfirmLoadState(void);
 void Port_SecondScreen_3DS_CancelLoadState(void);
 int Port_SecondScreen_3DS_NeedsRefresh(void);
-/* `tick` is the free-running animation tick, `paintedTick` the tick the last
- * scheduled paint used; both are required for the MAP-tab skip signature. */
-int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap, uint32_t tick,
-                                               uint32_t paintedTick, int32_t width,
-                                               int32_t height);
+int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap);
 int Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(const SecondScreenSnapshot* previous,
                                                      const SecondScreenSnapshot* current,
                                                      int previousValid);
