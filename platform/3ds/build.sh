@@ -25,13 +25,23 @@ fi
 export DEVKITPRO
 
 # Keep the small 3DS ABI correction for the pinned rcheevos source reproducible
-# without requiring a fork of the upstream dependency. The test also makes the
-# operation safe to repeat in an existing working tree.
+# without requiring a fork of the upstream dependency. Apply the one-line
+# signature correction directly so CI does not depend on patch-file parsing.
 RCHEEVOS_SOURCE="${ROOT}/third_party/rcheevos/src/rcheevos/rc_validate.c"
-RCHEEVOS_PATCH="${ROOT}/third_party/rcheevos-3ds.patch"
-if [[ -f "${RCHEEVOS_PATCH}" ]] && ! grep -q 'uint32_t\* value' "${RCHEEVOS_SOURCE}"; then
-  git -C "${ROOT}/third_party/rcheevos" apply "${RCHEEVOS_PATCH}"
-fi
+python3 - "${RCHEEVOS_SOURCE}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+old = "static const rc_operand_t* rc_validate_get_comparison(const rc_condition_t* condition, int* comparison, unsigned* value)"
+new = "static const rc_operand_t* rc_validate_get_comparison(const rc_condition_t* condition, int* comparison, uint32_t* value)"
+
+if new not in text:
+    if old not in text:
+        raise SystemExit("rcheevos ABI signature not found")
+    path.write_text(text.replace(old, new, 1))
+PY
 
 cmake -S "${ROOT}/platform/3ds" -B "${BUILD}" \
   -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
