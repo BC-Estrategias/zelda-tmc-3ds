@@ -57,8 +57,7 @@ run([
     '-DENABLE_TESTING=OFF',
     '-DMBEDTLS_FATAL_WARNINGS=OFF',
     '-DDISABLE_PACKAGE_CONFIG_AND_INSTALL=OFF',
-    '-DMBEDTLS_USER_CONFIG_FILE=mbedtls_3ds_config.h',
-    '-DCMAKE_C_FLAGS=-I' + str(project_mbedtls_config),
+    '-DMBEDTLS_USER_CONFIG_FILE=' + str(project_mbedtls_config / 'mbedtls_3ds_config.h'),
     '-DCMAKE_INSTALL_PREFIX=' + str(prefix),
 ])
 run(['cmake', '--build', mbed_build, '--parallel', jobs])
