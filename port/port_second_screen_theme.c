@@ -2012,36 +2012,151 @@ static const u8* BigGlyphData(char c) {
     return sBigFontGlyphs + (size_t)code * 128u;
 }
 
+typedef enum {
+    BIG_ACCENT_NONE = 0,
+    BIG_ACCENT_ACUTE,
+    BIG_ACCENT_GRAVE,
+    BIG_ACCENT_CIRCUMFLEX,
+    BIG_ACCENT_TILDE,
+    BIG_ACCENT_DIAERESIS,
+    BIG_ACCENT_CEDILLA,
+} BigAccent;
+
+/* Decode the UTF-8 subset needed by Portuguese and Spanish UI strings.
+ * The ROM's stylized banner font is byte-indexed and has reliable ASCII
+ * Latin glyphs, so accented letters reuse the matching base glyph and get
+ * a tiny native-scale accent painted into the same 16-row cell. This keeps
+ * the UI independent of the loaded ROM region/language. */
+static char BigUtf8Next(const char** cursor, BigAccent* accent) {
+    const unsigned char* p = (const unsigned char*)*cursor;
+    unsigned codepoint;
+    char base = '?';
+    *accent = BIG_ACCENT_NONE;
+    if (!p || !*p) return 0;
+    if (*p < 0x80) {
+        *cursor += 1;
+        return (char)*p;
+    }
+    if ((p[0] & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) {
+        codepoint = ((unsigned)(p[0] & 0x1F) << 6) | (unsigned)(p[1] & 0x3F);
+        *cursor += 2;
+    } else {
+        *cursor += 1;
+        return '?';
+    }
+#define MAP(cp, ch, mark) case cp: base = ch; *accent = mark; break
+    switch (codepoint) {
+        MAP(0x00C1, 'A', BIG_ACCENT_ACUTE);      MAP(0x00E1, 'a', BIG_ACCENT_ACUTE);
+        MAP(0x00C9, 'E', BIG_ACCENT_ACUTE);      MAP(0x00E9, 'e', BIG_ACCENT_ACUTE);
+        MAP(0x00CD, 'I', BIG_ACCENT_ACUTE);      MAP(0x00ED, 'i', BIG_ACCENT_ACUTE);
+        MAP(0x00D3, 'O', BIG_ACCENT_ACUTE);      MAP(0x00F3, 'o', BIG_ACCENT_ACUTE);
+        MAP(0x00DA, 'U', BIG_ACCENT_ACUTE);      MAP(0x00FA, 'u', BIG_ACCENT_ACUTE);
+        MAP(0x00C0, 'A', BIG_ACCENT_GRAVE);      MAP(0x00E0, 'a', BIG_ACCENT_GRAVE);
+        MAP(0x00C2, 'A', BIG_ACCENT_CIRCUMFLEX); MAP(0x00E2, 'a', BIG_ACCENT_CIRCUMFLEX);
+        MAP(0x00CA, 'E', BIG_ACCENT_CIRCUMFLEX); MAP(0x00EA, 'e', BIG_ACCENT_CIRCUMFLEX);
+        MAP(0x00D4, 'O', BIG_ACCENT_CIRCUMFLEX); MAP(0x00F4, 'o', BIG_ACCENT_CIRCUMFLEX);
+        MAP(0x00C3, 'A', BIG_ACCENT_TILDE);      MAP(0x00E3, 'a', BIG_ACCENT_TILDE);
+        MAP(0x00D5, 'O', BIG_ACCENT_TILDE);      MAP(0x00F5, 'o', BIG_ACCENT_TILDE);
+        MAP(0x00D1, 'N', BIG_ACCENT_TILDE);      MAP(0x00F1, 'n', BIG_ACCENT_TILDE);
+        MAP(0x00C4, 'A', BIG_ACCENT_DIAERESIS);  MAP(0x00E4, 'a', BIG_ACCENT_DIAERESIS);
+        MAP(0x00D6, 'O', BIG_ACCENT_DIAERESIS);  MAP(0x00F6, 'o', BIG_ACCENT_DIAERESIS);
+        MAP(0x00DC, 'U', BIG_ACCENT_DIAERESIS);  MAP(0x00FC, 'u', BIG_ACCENT_DIAERESIS);
+        MAP(0x00C7, 'C', BIG_ACCENT_CEDILLA);    MAP(0x00E7, 'c', BIG_ACCENT_CEDILLA);
+        case 0x00A1: base = '!'; break;
+        case 0x00BF: base = '?'; break;
+        default: break;
+    }
+#undef MAP
+    return base;
+}
+
 #define BIG_SPACE_ADVANCE 8 /* the tokenizer's fixed word gap (case 0xc) */
 #define BIG_GLYPH_ROWS 16 /* stylized cell height; ink spans rows 1..15 */
 #define BIG_INK_ROWS 13   /* rows the body/shade roles actually cover */
 
 int32_t Port_SecondScreenTheme_BigTextWidth(const char* str, int32_t scale) {
     int32_t w = 0, gs, gw, adv;
+    const char* p = str;
     if (!sBuilt || !sBigFontOk || str == NULL) {
         return 0;
     }
-    if (scale < 1) {
-        scale = 1;
-    }
-    for (; *str; str++) {
-        if (*str == ' ') {
+    if (scale < 1) scale = 1;
+    while (*p) {
+        BigAccent accent;
+        char ch = BigUtf8Next(&p, &accent);
+        (void)accent;
+        if (ch == ' ') {
             w += BIG_SPACE_ADVANCE;
             continue;
         }
         {
-            const u8* g = BigGlyphData(*str);
+            const u8* g = BigGlyphData(ch);
             GlyphMetrics(g, &gs, &gw);
             adv = gw;
             GlyphMetrics(g + 64, &gs, &gw);
             adv += gw;
-            if (adv > 1) {
-                adv--; /* stylized glyphs share one outline column */
-            }
+            if (adv > 1) adv--;
             w += adv;
         }
     }
     return w * scale;
+}
+
+static uint32_t BigAccentColor(const uint32_t* pal) {
+    for (int i = 1; i < 16; ++i) if (pal[i]) return pal[i];
+    return 0xFFFFFFFFu;
+}
+
+static void BigAccentPixel(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                           int32_t x, int32_t y, int32_t scale, uint32_t color) {
+    for (int32_t ey = 0; ey < scale; ++ey) {
+        const int32_t py = y + ey;
+        if (py < 0 || py >= bufH) continue;
+        for (int32_t ex = 0; ex < scale; ++ex) {
+            const int32_t px = x + ex;
+            if (px >= 0 && px < bufW) pixels[(size_t)py * (size_t)stride + px] = color;
+        }
+    }
+}
+
+static void DrawBigAccent(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                          int32_t x, int32_t y, int32_t width, int32_t scale,
+                          const uint32_t* pal, BigAccent accent) {
+    if (accent == BIG_ACCENT_NONE || width <= 0) return;
+    const uint32_t color = BigAccentColor(pal);
+    const int32_t center = x + (width * scale) / 2;
+    const int32_t top = y;
+    if (accent == BIG_ACCENT_CEDILLA) {
+        BigAccentPixel(pixels, bufW, bufH, stride, center, y + 15 * scale, scale, color);
+        BigAccentPixel(pixels, bufW, bufH, stride, center - scale, y + 14 * scale, scale, color);
+        return;
+    }
+    switch (accent) {
+        case BIG_ACCENT_ACUTE:
+            BigAccentPixel(pixels, bufW, bufH, stride, center, top, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center - scale, top + scale, scale, color);
+            break;
+        case BIG_ACCENT_GRAVE:
+            BigAccentPixel(pixels, bufW, bufH, stride, center - scale, top, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center, top + scale, scale, color);
+            break;
+        case BIG_ACCENT_CIRCUMFLEX:
+            BigAccentPixel(pixels, bufW, bufH, stride, center - scale, top + scale, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center, top, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center + scale, top + scale, scale, color);
+            break;
+        case BIG_ACCENT_TILDE:
+            BigAccentPixel(pixels, bufW, bufH, stride, center - scale, top, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center, top + scale, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center + scale, top, scale, color);
+            break;
+        case BIG_ACCENT_DIAERESIS:
+            BigAccentPixel(pixels, bufW, bufH, stride, center - scale, top, scale, color);
+            BigAccentPixel(pixels, bufW, bufH, stride, center + scale, top, scale, color);
+            break;
+        default:
+            break;
+    }
 }
 
 /* Shared body of the stylized draw, taking the value->RGBA table directly so
@@ -2050,25 +2165,20 @@ int32_t Port_SecondScreenTheme_BigTextWidth(const char* str, int32_t scale) {
 static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
                               int32_t y, int32_t scale, const uint32_t* pal, const char* str) {
     int32_t startX = x;
-    if (!sBuilt || !sBigFontOk || str == NULL) {
-        return 0;
-    }
-    if (scale < 1) {
-        scale = 1;
-    }
+    const char* p = str;
+    if (!sBuilt || !sBigFontOk || str == NULL) return 0;
+    if (scale < 1) scale = 1;
 
-    for (; *str; str++) {
+    while (*p) {
         const u8* glyph;
         int32_t cell, adv = 0;
-        if (*str == ' ') {
+        BigAccent accent;
+        char ch = BigUtf8Next(&p, &accent);
+        if (ch == ' ') {
             x += BIG_SPACE_ADVANCE * scale;
             continue;
         }
-        glyph = BigGlyphData(*str);
-        /* Two 8x16 cells drawn back to back at their own metric spans —
-         * the exact double sub_0805F820 call of sub_0805F7DC. Zero-value
-         * pixels are skipped (sub_080026F2's transparent merge), which is
-         * also what lets the shared outline columns overlap cleanly. */
+        glyph = BigGlyphData(ch);
         for (cell = 0; cell < 2; cell++) {
             const u8* cp = glyph + cell * 64;
             int32_t gs, gw, col, row2, ex, ey;
@@ -2078,28 +2188,22 @@ static int32_t DrawBigTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH, int3
                     u8 packed = cp[row2 * 4 + (col >> 1)];
                     u8 pix = (col & 1) ? (u8)(packed >> 4) : (u8)(packed & 0x0Fu);
                     uint32_t rgba = pal[pix];
-                    if (pix == 0 || rgba == 0) {
-                        continue;
-                    }
+                    if (pix == 0 || rgba == 0) continue;
                     for (ey = 0; ey < scale; ey++) {
                         int32_t dy = y + row2 * scale + ey;
-                        if (dy < 0 || dy >= bufH) {
-                            continue;
-                        }
+                        if (dy < 0 || dy >= bufH) continue;
                         for (ex = 0; ex < scale; ex++) {
                             int32_t dx = x + (adv + col - gs) * scale + ex;
-                            if (dx >= 0 && dx < bufW) {
+                            if (dx >= 0 && dx < bufW)
                                 pixels[(size_t)dy * (size_t)stride + dx] = rgba;
-                            }
                         }
                     }
                 }
             }
             adv += gw;
         }
-        if (adv > 1) {
-            adv--; /* next glyph overlaps this one's outline column */
-        }
+        if (adv > 1) adv--;
+        DrawBigAccent(pixels, bufW, bufH, stride, x, y, adv, scale, pal, accent);
         x += adv * scale;
     }
     return x - startX;
