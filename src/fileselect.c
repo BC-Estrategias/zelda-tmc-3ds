@@ -25,6 +25,7 @@
 #include "ui.h"
 #include "affine.h"
 #include "gfx.h"
+#include "assets/gfx_offsets.h"
 #include "fade.h"
 #ifdef PC_PORT
 #include "port_bottle_compat.h"
@@ -1039,12 +1040,12 @@ static void HandleFileScreenEnter(void) {
     sub_080503A8(0x5);
     LoadPaletteGroup(0x9);
 #ifdef PC_PORT
-    /* Palette group 0x9 contains the retail file-select heart colors in
-     * OBJ palette 15 (destination palette 31 / gPalette_14). The PC/3DS
-     * file-card heart tilemap samples BG palette 15 instead, which otherwise
-     * remains zeroed and renders every heart black. Mirror the already-loaded
-     * retail palette into BG slot 15 instead of inventing a replacement ramp. */
-    LoadPalettes((const u8*)(gPaletteBuffer + 31 * 16), 15, 1);
+    /* The retail title-screen palette groups (1-4) load gPalette_12 into
+     * BG palette 15. The original file-select path relies on that palette
+     * surviving the transition and its heart tilemap explicitly selects
+     * palette 15 (0xFxxx entries). Make that inherited GBA state explicit
+     * for ports so direct/file-select boot paths render the same heart colors. */
+    LoadPalettes(&gGlobalGfxAndPalettes[offset_gPalette_12], 15, 1);
 #endif
     for (i = 0; i < 26; i++) {
         CreateObject(FILE_SCREEN_OBJECTS, i, 0);
