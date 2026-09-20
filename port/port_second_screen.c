@@ -162,6 +162,13 @@ enum {
     SS_ACT_LOAD_CONFIRM,
     SS_ACT_RANDO_CANCEL,
     SS_ACT_RANDO_CONFIRM,
+#ifdef TMC_3DS
+    SS_ACT_UPDATE_CHANNEL,
+    SS_ACT_UPDATE_RELEASE,
+    SS_ACT_UPDATE_ACTION,
+    SS_ACT_UPDATE_PREV,
+    SS_ACT_UPDATE_NEXT,
+#endif
     SS_ACT_RESOURCE,
     SS_ACT_RETRO_LOGIN,
     SS_ACT_RETRO_LOGOUT,
@@ -178,6 +185,9 @@ enum {
     SS_SETTINGS_STATES,
     SS_SETTINGS_OVERLAY,
     SS_SETTINGS_RANDOMIZER,
+#ifdef TMC_3DS
+    SS_SETTINGS_UPDATE,
+#endif
     SS_SETTINGS_RETROACHIEVEMENTS,
     SS_SETTINGS_RETRO_LIST,
 };
@@ -1984,6 +1994,9 @@ static const char* SettingsPageTitle(int page) {
         case SS_SETTINGS_STATES: return "SAVE STATES";
         case SS_SETTINGS_OVERLAY: return "SOBREPOSICAO";
         case SS_SETTINGS_RANDOMIZER: return "ALEATORIZADOR";
+#ifdef TMC_3DS
+        case SS_SETTINGS_UPDATE: return "ATUALIZACAO";
+#endif
         case SS_SETTINGS_RETROACHIEVEMENTS: return "CONQUISTAS";
         case SS_SETTINGS_RETRO_LIST: return "LISTA";
         default: return "AJUSTES";
@@ -2348,6 +2361,10 @@ static int GetSettingState(int row, char* out, int outCap) {
 /* Root and submenu compositor. Large menu-button plates provide the same
  * hierarchy and tap language as the sibling port; Minish Cap's decoded
  * parchment, chips, font, and palette keep it native to this game. */
+#ifdef TMC_3DS
+#include "../platform/3ds/source/update_ui_3ds.inc"
+#endif
+
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                                float ry0, float rx1, float ry1, float u, int32_t ts, int page, uint32_t tick,
                                uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult,
@@ -2370,14 +2387,14 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        static const char* const labels[6] = {
-            "TELA", "JOGO", "QUAL. VIDA", "CONQUISTAS", "DESENVOLVEDOR", "ALEATORIZADOR"
+        static const char* const labels[7] = {
+            "TELA", "JOGO", "QUAL. VIDA", "CONQUISTAS", "ATUALIZACAO", "DESENVOLVEDOR", "ALEATORIZADOR"
         };
-        static const uint8_t pages[6] = {
+        static const uint8_t pages[7] = {
             SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_RETROACHIEVEMENTS,
-            SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
+            SS_SETTINGS_UPDATE, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
         };
-        const int rootRows = 6;
+        const int rootRows = 7;
 #else
         static const char* const labels[4] = { "TELA", "JOGO", "QUAL. VIDA", "DESENVOLVEDOR" };
         static const uint8_t pages[4] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_DEVELOPER };
@@ -2392,6 +2409,13 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         }
         return;
     }
+
+#ifdef TMC_3DS
+    if (page == SS_SETTINGS_UPDATE) {
+        PaintUpdatePanel(s, tl, x0, y0, x1, iy1, u, ts);
+        return;
+    }
+#endif
 
     if (page == SS_SETTINGS_DEVELOPER) {
         float gap = 10 * u;
@@ -3305,6 +3329,10 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         return;
     }
 
+#ifdef TMC_3DS
+    if (HandleUpdateTap(hit.action, hit.arg)) return;
+#endif
+
     switch (hit.action) {
         case SS_ACT_TAB:
             UI_LOCK();
@@ -3324,6 +3352,14 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.settingsPage = hit.arg;
             if (hit.arg == SS_SETTINGS_RETRO_LIST) sUi.retroAchievementPage = 0;
             UI_UNLOCK();
+#ifdef TMC_3DS
+            if (hit.arg == SS_SETTINGS_UPDATE) {
+                UpdateUI_Reset();
+                UpdateStatus updateStatus;
+                Updater_GetStatus(&updateStatus);
+                if (updateStatus.state != UPDATE_AVAILABLE) Updater_Check();
+            }
+#endif
             break;
         case SS_ACT_SETTINGS_BACK:
             UI_LOCK();
