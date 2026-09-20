@@ -151,7 +151,7 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
     static bool paintedNotes;
     if (paintedRevision == st.revision && paintedPage == page && paintedNotes == notes) return false;
     paintedRevision=st.revision; paintedPage=page; paintedNotes=notes;
-    static char lines[512][43];
+    static char lines[512][UPDATE_NOTE_LINE_BYTES];
     static unsigned count, revision = UINT32_MAX;
     static bool lastNotes;
     if (revision != st.revision || notes != lastNotes) {
@@ -171,7 +171,7 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
                     if (space && space!=part) { take = space-part; part[take]=0; }
                 }
                 if (!take && *text) { take=1; part[0]=*text; part[1]=0; }
-                snprintf(lines[count++],43,"%s",part);
+                snprintf(lines[count++],UPDATE_NOTE_LINE_BYTES,"%s",part);
                 text += take; while (*text==' ') ++text;
             } while (*text && count<512);
         }
