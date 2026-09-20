@@ -574,8 +574,12 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
  * independent of gameplay aspect, filter and Full View settings. */
 static void DrawUpdateTop(void) {
     if (!Port_SecondScreen_3DS_UpdateOpen()) return;
+    /* GX display transfer is not a padded row copy. Hardware requires the
+     * transfer extent to match the 512x256 texture on both sides. Only the
+     * visible 400x240 viewport is painted and sampled. */
+    const size_t uploadBytes = 512u * 256u * sizeof(uint32_t);
     if (!sUpdateReady) {
-        sUpdatePixels = linearAlloc(400 * 240 * sizeof(uint32_t));
+        sUpdatePixels = linearAlloc(uploadBytes);
         if (!sUpdatePixels) return;
         if (!C3D_TexInit(&sUpdateTexture, 512, 256, GPU_RGBA8)) {
             linearFree(sUpdatePixels);
@@ -584,11 +588,12 @@ static void DrawUpdateTop(void) {
         }
         C3D_TexSetFilter(&sUpdateTexture, GPU_NEAREST, GPU_NEAREST);
         C3D_TexSetWrap(&sUpdateTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        memset(sUpdatePixels, 0, uploadBytes);
         sUpdateReady = true;
     }
-    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels, 400)) {
-        Platform3DS_CleanDataCache(sUpdatePixels, 400 * 240 * sizeof(uint32_t));
-        C3D_SyncDisplayTransfer(sUpdatePixels, GX_BUFFER_DIM(400, 240),
+    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels, 512)) {
+        Platform3DS_CleanDataCache(sUpdatePixels, uploadBytes);
+        C3D_SyncDisplayTransfer(sUpdatePixels, GX_BUFFER_DIM(512, 256),
             sUpdateTexture.data, GX_BUFFER_DIM(512, 256),
             GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) |
             GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
