@@ -1056,6 +1056,9 @@ static void HandleFileScreenEnter(void) {
          * only non-transparent pixels of the empty tile to its black entry,
          * preserving the transparent background and the red complete tile. */
         volatile u8* emptyHeartTile = (volatile u8*)BG_CHAR_ADDR((gScreen.bg1.control >> 2) & 3) + 0x251 * 32;
+#ifdef PC_PORT
+        emptyHeartTile = (volatile u8*)gba_MemPtr((u32)(uintptr_t)emptyHeartTile);
+#endif
         for (i = 0; i < 32; i++) {
             u8 pixels = emptyHeartTile[i];
             emptyHeartTile[i] = (pixels & 0xf0 ? 0xf0 : 0) | (pixels & 0x0f ? 0x0f : 0);
