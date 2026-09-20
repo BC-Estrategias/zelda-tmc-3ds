@@ -605,7 +605,6 @@ static void DrawUpdateTop(void) {
     C2D_Image image = { .tex = &sUpdateTexture, .subtex = &sub };
     C2D_DrawImageAt(image, 0, 0, 0, NULL, 1, 1);
     ConfigureAbgrTextureEnv();
-    PlatformGpu3DS_InvalidateTopBorder();
 }
 
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
