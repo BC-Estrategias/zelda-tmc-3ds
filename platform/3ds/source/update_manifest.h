@@ -18,4 +18,5 @@ bool Update_IsNewer(const char *candidate, const char *installed);
 bool Update_ValidVersion(const char *version);
 bool Update_AllowedDownloadUrl(const char *url);
 
-unsigned Update_FormatNotes(const char *markdown, char lines[][43], unsigned capacity);
+#define UPDATE_NOTE_LINE_BYTES 64
+unsigned Update_FormatNotes(const char *markdown, char lines[][UPDATE_NOTE_LINE_BYTES], unsigned capacity);
