@@ -162,13 +162,13 @@ static bool enough_space(uint64_t required) {
 static bool verify_file(void) {
   FILE *f = fopen(UPDATE_PART, "rb"); if (!f) return false;
   mbedtls_sha256_context sha; mbedtls_sha256_init(&sha);
-  bool ok = mbedtls_sha256_starts_ret(&sha, 0) == 0;
+  bool ok = mbedtls_sha256_starts(&sha, 0) == 0;
   unsigned char *data = malloc(UPDATE_IO_SIZE), digest[32]; size_t total = 0; ssize_t n = 0;
   ok = ok && data != NULL;
   while (ok && (n = read(fileno(f), data, UPDATE_IO_SIZE)) > 0) {
-    total += n; ok = !cancelled() && mbedtls_sha256_update_ret(&sha, data, n) == 0;
+    total += n; ok = !cancelled() && mbedtls_sha256_update(&sha, data, n) == 0;
   }
-  ok = ok && n >= 0 && total == release.size && mbedtls_sha256_finish_ret(&sha, digest) == 0;
+  ok = ok && n >= 0 && total == release.size && mbedtls_sha256_finish(&sha, digest) == 0;
   fclose(f); free(data); mbedtls_sha256_free(&sha);
   char hex[65]; for (int i = 0; i < 32 && ok; i++) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
   return ok && !strcmp(hex, release.sha256);
