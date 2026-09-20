@@ -7,6 +7,7 @@
  * with the GBA decomp's typedefs when both are included in one translation
  * unit. */
 int Port_RetroAchievements3DS_BeginNetwork(void);
+int Port_RetroAchievements3DS_NetworkReady(void);
 void Port_RetroAchievements3DS_EndNetwork(void);
 int Port_RetroAchievements3DS_Request(const char* url, const char* postData, const char* contentType,
                                       char** body, size_t* bodyLength, int* httpStatus);
