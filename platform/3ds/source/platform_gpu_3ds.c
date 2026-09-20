@@ -1,4 +1,5 @@
 #include "platform_gpu_3ds.h"
+#include "platform_3ds.h"
 #include "top_view_3ds.h"
 #include "port_retroachievements.h"
 #include "port_second_screen_3ds.h"
