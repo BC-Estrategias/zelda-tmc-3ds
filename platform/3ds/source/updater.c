@@ -1,5 +1,6 @@
 #include "updater.h"
 #include "platform_3ds.h"
+#include "port_retroachievements_3ds.h"
 #include <3ds.h>
 #include <curl/curl.h>
 #include <mbedtls/sha256.h>
@@ -221,15 +222,20 @@ static bool install_3dsx(void) {
   remove(backup); return true;
 }
 static void run_job(void *arg) {
-  void *soc_buffer = NULL; bool soc_ready = false, curl_ready = false, ac_ready = false, ssl_ready = false;
+  void *soc_buffer = NULL; bool soc_owned = false, curl_ready = false, ac_ready = false, ssl_ready = false;
   bool ok = false; Transfer t = {0};
   UpdateStatus s; Updater_GetStatus(&s);
   if (R_FAILED(acInit())) goto done;
   ac_ready = true; u32 wifi = 0;
   if (R_FAILED(ACU_GetWifiStatus(&wifi)) || !wifi) { publish(UPDATE_ERROR, "NO WI-FI CONNECTION"); goto done; }
-  soc_buffer = memalign(4096, 1024 * 1024);
-  if (!soc_buffer || R_FAILED(socInit(soc_buffer, 1024 * 1024))) goto done;
-  soc_ready = true;
+  /* RetroAchievements may already own libctru SOC for its HTTPS session.
+   * Reuse that service instead of calling socInit twice. When RA is offline,
+   * the updater owns a temporary SOC buffer for this job. */
+  if (!Port_RetroAchievements3DS_NetworkReady()) {
+    soc_buffer = memalign(4096, 1024 * 1024);
+    if (!soc_buffer || R_FAILED(socInit(soc_buffer, 1024 * 1024))) goto done;
+    soc_owned = true;
+  }
   // The linked mbedTLS entropy callback needs the SSL service on both models.
   if (R_FAILED(sslcInit(0))) { publish(UPDATE_ERROR, "TLS SERVICE FAILED"); goto done; }
   ssl_ready = true;
@@ -273,7 +279,7 @@ done:
   if (download_job) remove(UPDATE_PART);
   if (curl_ready) curl_global_cleanup();
   if (ssl_ready) sslcExit();
-  if (soc_ready) socExit();
+  if (soc_owned) socExit();
   free(soc_buffer);
   if (ac_ready) acExit();
   Updater_GetStatus(&s);
@@ -325,7 +331,9 @@ void Updater_Init(const char *path) {
       strlen(path) > 5 && !strcmp(path + strlen(path) - 5, ".3dsx")) strcpy(launch_file, path);
   struct stat st;
   if (stat(CHANNEL_FILE, &st) != 0) rename(CHANNEL_FILE ".bak", CHANNEL_FILE);
-  FILE *f = fopen(CHANNEL_FILE, "rb"); if (f) { status.prerelease = fgetc(f) == '1'; fclose(f); }
+  FILE *f = fopen(CHANNEL_FILE, "rb");
+  if (f) { status.prerelease = fgetc(f) == '1'; fclose(f); }
+  else if (strchr(TMC_PORT_VERSION, '-') != NULL) { status.prerelease = true; }
   Updater_Check();
 }
 void Updater_Shutdown(void) {
