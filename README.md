@@ -1,108 +1,246 @@
 # The Legend of Zelda: The Minish Cap — Nintendo 3DS Edition
 
 <p align="center">
-  <strong>Uma edição para Nintendo 3DS com tela dupla, controles modernos e recursos opcionais de qualidade de vida.</strong>
+  <img width="100%" alt="The Minish Cap 3DS" src="https://github.com/user-attachments/assets/db99e777-12a2-4222-86c3-7c8f14062586" />
 </p>
 
-> Projeto não oficial, criado para uso com uma cópia legal da ROM de Game Boy Advance. A ROM, seus dados e seus recursos nunca são distribuídos neste repositório nem fazem parte da CIA.
+<p align="center">
+  <strong>Uma edição nativa para Nintendo 3DS com tela dupla, Full View, RetroAchievements e melhorias de qualidade de vida.</strong>
+</p>
 
-## O que é
+> Projeto não oficial para uso com uma cópia legal de The Legend of Zelda: The Minish Cap para Game Boy Advance. Nenhuma ROM, save, firmware ou asset extraído da Nintendo é distribuído neste repositório ou incorporado à CIA/3DSX.
 
-Esta é uma adaptação nativa de *The Legend of Zelda: The Minish Cap* para Nintendo 3DS. Ela usa a tela superior para a ação e a inferior para mapa, missões, itens, cheats, configurações e RetroAchievements — sem substituir a experiência original do jogo.
+## Sobre esta edição
 
-O projeto parte de trabalhos abertos do Project Picori, da decompilação `zeldaret/tmc` e do port Android de tela dupla. Esta edição e suas melhorias para 3DS são mantidas por **Bruno Cruz**.
+Este projeto é uma adaptação nativa de The Legend of Zelda: The Minish Cap para Nintendo 3DS. A ação fica na tela superior; a tela inferior reúne mapa, informações de masmorras, status da aventura, itens, cheats, configurações, Randomizer e RetroAchievements.
 
-## Recursos
+A base do projeto vem de [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds), do [Project Picori](https://github.com/999sian/tmc), da decompilação [zeldaret/tmc](https://github.com/zeldaret/tmc) e do trabalho de tela dupla de [samyost1/tmc-android](https://github.com/samyost1/tmc-android).
 
-### Apresentação e controles
+Esta edição é mantida por **Bruno Cruz** e preserva a base do port de Esteban enquanto adiciona uma camada própria de interface, qualidade de vida, RetroAchievements e ajustes de apresentação para o 3DS.
 
-- Modos de imagem **Wide**, Original e Stretch, com filtros Blur, Bilinear, Ultra Sharp e Pixel Perfect.
-- **Full View experimental** no New Nintendo 3DS: amplia a área visível em cenários compatíveis sem esticar os pixels.
-- Interface inferior em português: mapa, masmorras, missões, itens e opções por toque.
-- O botão **X** alterna rapidamente entre Missões → Mapa → Itens → Cheats.
-- **ZR** ativa avanço rápido. **Y** executa o atalho de rolar e atacar quando esse movimento estiver disponível na aventura.
-- Save states rápidos: **ZL + A** salva e **ZL + Y** carrega o ponto mais recente, com confirmação para evitar acionamentos acidentais.
+## Destaques desta edição
+
+### Full View refinado
+
+No **New Nintendo 3DS**, a combinação **Wide + Pixel Perfect** ativa o Full View experimental em salas compatíveis.
+
+Nesta edição, o Full View só usa **400×240 reais** quando a sala e o conteúdo efetivamente renderizado conseguem preencher todo o viewport. Interiores pequenos não são reduzidos para uma câmera 200×120 ampliada em 2×, evitando sprites artificialmente grandes.
+
+Diálogos normais permanecem em Full View nas salas compatíveis. Transições, telas fixas, overlays incompatíveis e áreas pequenas fazem fallback automaticamente para o modo seguro sem esticar a imagem.
+
+### Tela inferior nativa
+
+A tela de baixo foi adaptada para concentrar informações e atalhos sem substituir a experiência original:
+
+- mapa do mundo e mapas de masmorras;
+- status da aventura, Kinstones e técnicas de espada;
+- inventário e itens por toque;
+- aba de cheats para recuperar vida e reabastecer rupias, conchas, Kinstones, bombas e flechas;
+- configurações de vídeo, gameplay, qualidade de vida, Randomizer e RetroAchievements;
+- fora do gameplay, uma tela temática com a Triforce dá acesso às configurações.
+
+O botão **X** alterna rapidamente entre **Missões → Mapa → Itens → Cheats** durante o jogo.
+
+### RetroAchievements nativo
+
+A integração com **RetroAchievements** roda diretamente no 3DS:
+
+- login com sessão persistente no cartão SD;
+- lista de conquistas na tela inferior, com badges, descrição e pontuação;
+- avisos visuais durante o jogo quando uma conquista é desbloqueada;
+- suporte à ROM USA original;
+- suporte a traduções **PT-BR baseadas na ROM USA**, usando o mesmo conjunto de conquistas após a verificação de compatibilidade;
+- o jogo continua funcionando normalmente sem conta ou sem conexão.
+
+A versão europeia funciona normalmente no jogo, mas o conjunto de RetroAchievements desta edição é voltado à base americana e às traduções compatíveis com ela.
 
 ### Qualidade de vida
 
-- Velocidade do Link configurável em **1×, 1,5× ou 2×**, também aplicada à natação e à forma Minish.
-- Opções para textos mais rápidos, carga de espada acelerada e portais Minish rápidos.
-- Fusão de Kinstones e coleção de miniaturas com fluxos encurtados.
-- Acesso rápido a recursos no menu Cheats: vida, rupias, conchas, Kinstones, bombas e flechas.
-- O reabastecimento de Kinstones preserva corretamente as peças douradas de história: peças já usadas são removidas; peças ainda necessárias permanecem em quantidade segura.
-- Marcadores de pedaços de coração ainda pendentes no mapa-múndi, lidos a partir dos dados permanentes do save.
-- Opção para iniciar diretamente na seleção de arquivo.
+Esta edição acrescenta opções próprias de gameplay:
 
-### RetroAchievements
+- velocidade do Link em **1×, 1,5× ou 2×**;
+- texto mais rápido;
+- carga da espada acelerada;
+- portais Minish mais rápidos;
+- fusões de Kinstones mais rápidas;
+- fluxo de miniaturas mais rápido;
+- marcadores dos pedaços de coração ainda pendentes no mapa;
+- opção de iniciar diretamente na seleção de arquivo.
 
-- Integração nativa com **RetroAchievements** para a versão americana do jogo e ROMs PT-BR baseadas nela.
-- Login persistente no cartão SD; a senha não precisa ser digitada a cada inicialização.
-- Lista de conquistas na tela inferior, com concluídas primeiro, e aviso visual no canto superior direito quando uma conquista é desbloqueada.
-- O jogo continua funcionando normalmente sem conexão de rede ou sem conta RetroAchievements.
+### Save states e turbo
 
-### Diagnóstico e estabilidade
+Atalhos atuais:
 
-- Perfis específicos para New 3DS e Old 3DS.
-- Correções de renderização, camadas especiais e quedas pontuais de desempenho encontradas durante a campanha.
-- Pressione **L + R + A** para criar um dump de diagnóstico: capturas das telas, estado de desempenho e checkpoint reproduzível.
-- Duplicação de estados de sala e carregamentos estáticos evitada quando possível para reduzir pequenas pausas ao mudar de área.
+- **ZL + X** — salva um quick state no próximo ponto seguro;
+- **ZL + Y** — abre confirmação antes de carregar o quick state;
+- **ZR** — mantém o turbo ativo no New 3DS;
+- **C-Stick** — também pode acionar o turbo.
 
-## New Nintendo 3DS
+O multiplicador de turbo pode ser configurado entre **2× e 5×**.
 
-No New 3DS, a edição usa os recursos extras do aparelho: CPU em 804 MHz, cache L2, núcleo adicional para trabalho de renderização e avanço rápido pelo C-Stick. Isso permite a apresentação Full View e reduz a chance de queda de quadros em áreas mais pesadas.
+### Randomizer
 
-No Old 3DS, o jogo também é suportado com um perfil mais econômico. Alguns recursos visuais experimentais podem ser mais limitados para preservar a fluidez.
+O Project Picori Randomizer também está integrado ao menu do 3DS, com perfil de save separado do jogo normal e opções próprias de lógica, entradas, Kinstones, itens e cosméticos.
+
+### Desempenho
+
+O port escolhe automaticamente um perfil de acordo com o aparelho.
+
+**New Nintendo 3DS:** usa os recursos extras do hardware, incluindo modo de 804 MHz, cache L2, núcleo adicional e o caminho acelerado de apresentação disponível para o port.
+
+**Old Nintendo 3DS:** utiliza um perfil mais econômico, com otimizações de áudio/renderização e apresentação adaptativa para evitar que quedas visuais desacelerem toda a lógica do jogo.
+
+## Modos de imagem
+
+Aspecto da tela superior:
+
+- **Wide**
+- **Original**
+- **Stretch**
+
+Filtros disponíveis nesta build:
+
+- **Blur**
+- **Bilinear**
+- **Pixel Perfect**
+
+> O antigo modo experimental “Ultra Sharp” não faz parte da build estável atual.
 
 ## Instalação
 
-1. Baixe a CIA na página de [Releases](../../releases/latest) ou leia o QR Code disponibilizado junto da versão.
-2. Instale a CIA com o FBI.
-3. No cartão SD, crie a pasta:
+### CIA — recomendado
 
-   ```text
-   sdmc:/3ds/The Minish Cap 3DS/
-   ```
+Baixe a versão mais recente em [Releases](../../releases/latest) e instale o arquivo .cia com o **FBI**.
 
-4. Coloque nessa pasta sua ROM `.gba` legalmente obtida. O nome do arquivo é livre.
-5. Abra o jogo e, se desejar, configure o RetroAchievements pela aba da tela inferior.
+Para a release atual, no FBI abra:
 
-### ROMs aceitas
+~~~text
+Remote Install > Scan QR Code
+~~~
 
-A edição reconhece ROMs USA e Europeias limpas, além de traduções PT-BR compatíveis com a base americana. Para RetroAchievements, a ROM PT-BR é identificada como **PT-BR base USA**, sem alterar a lógica original do jogo.
+e escaneie:
 
-SHA-1 das ROMs limpas esperadas:
+<p align="center">
+  <img width="320" alt="QR Code para instalação do The Minish Cap 3DS" src="https://github.com/BC-Estrategias/zelda-tmc-3ds/releases/download/v1.0.1/tmc-3ds-v1.0.1-qr.png" />
+</p>
 
-```text
+### 3DSX
+
+O arquivo .3dsx da release pode ser usado pelo **Homebrew Launcher**.
+
+## ROM necessária
+
+Na primeira execução, o port procura a ROM nesta pasta:
+
+~~~text
+sdmc:/3ds/The Minish Cap 3DS/
+~~~
+
+Coloque ali uma ROM .gba legalmente obtida. O nome do arquivo é livre; basta manter a extensão .gba.
+
+Exemplo:
+
+~~~text
+sdmc:/3ds/The Minish Cap 3DS/The Minish Cap.gba
+~~~
+
+São reconhecidas as bases **USA (BZME)** e **Europe (BZMP)**.
+
+SHA-1 das ROMs limpas conhecidas:
+
+~~~text
 USA:    b4bd50e4131b027c334547b4524e2dbbd4227130
 Europe: cff199b36ff173fb6faf152653d1bccf87c26fb7
-```
+~~~
 
-## Atualizações e suporte
+### Tradução PT-BR
 
-- A CIA não contém ROM, assets extraídos, saves nem firmware.
-- Ao relatar um problema, envie a pasta criada em `sdmc:/3ds/The Minish Cap 3DS/dumps/`.
-- A documentação técnica do alvo 3DS fica em [platform/3ds/README.md](platform/3ds/README.md).
+O jogo também funciona com **ROMs traduzidas para PT-BR baseadas na versão americana**, desde que preservem a base compatível BZME.
+
+Para RetroAchievements, esta edição reconhece uma tradução compatível de base USA e utiliza o conjunto de conquistas da versão americana. O hash real da ROM traduzida continua registrado nos diagnósticos; a compatibilidade não altera nem incorpora a ROM ao aplicativo.
+
+A ROM permanece no cartão SD e nunca é embutida na CIA ou no 3DSX.
+
+## Áudio — Dump DSP
+
+O áudio do homebrew requer o firmware DSP do próprio 3DS.
+
+Se o jogo abrir sem música ou efeitos sonoros, abra o menu **Rosalina do Luma3DS**:
+
+~~~text
+L + ↓ + SELECT
+~~~
+
+Depois selecione:
+
+~~~text
+Miscellaneous options
+> Dump DSP firmware
+~~~
+
+Esse procedimento normalmente precisa ser feito apenas **uma vez por console**.
+
+Depois do dump, feche o Rosalina e abra o jogo novamente.
+
+## Diagnóstico e bugs
+
+Durante o jogo, pressione:
+
+~~~text
+L + R + A
+~~~
+
+O port pausa e cria um dump de diagnóstico com capturas das telas, memória, estado de execução, informações de desempenho e outros dados úteis para reprodução do problema.
+
+Os dumps ficam em:
+
+~~~text
+sdmc:/3ds/The Minish Cap 3DS/dumps/
+~~~
+
+Ao reportar crash, bug gráfico ou problema de desempenho, envie essa pasta sempre que possível.
 
 ## Compilação
 
-São necessários devkitPro, devkitARM, libctru, Citro2D, Citro3D, CMake, `makerom` e `bannertool`.
+Requisitos principais:
 
-```sh
-platform/3ds/build.sh
-```
+- devkitPro / devkitARM
+- libctru
+- Citro2D
+- Citro3D
+- CMake
+- makerom e bannertool para gerar CIA
 
-Os pacotes são gerados em `build-3ds/game/`. A compilação não incorpora uma ROM.
+Build:
+
+~~~sh
+chmod +x platform/3ds/build.sh
+./platform/3ds/build.sh
+~~~
+
+Os pacotes são gerados em:
+
+~~~text
+build-3ds/game/
+~~~
+
+A compilação **não inclui nem incorpora uma ROM**.
 
 ## Créditos
 
+- [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds) — base do port para Nintendo 3DS.
 - [Project Picori](https://github.com/999sian/tmc) — engine e infraestrutura do port.
 - [zeldaret/tmc](https://github.com/zeldaret/tmc) — decompilação original.
-- [samyost1/tmc-android](https://github.com/samyost1/tmc-android) — base do port Android de tela dupla.
-- [EstebanPdN/zelda-tmc-3ds](https://github.com/EstebanPdN/zelda-tmc-3ds) — ponto de partida do port para Nintendo 3DS.
-- Bruno Cruz — edição, recursos de qualidade de vida, interface e manutenção desta versão.
+- [samyost1/tmc-android](https://github.com/samyost1/tmc-android) — base do trabalho de tela dupla.
+- [Raekwon1603/tmc-android](https://github.com/Raekwon1603/tmc-android) — trabalho de plataforma Android relacionado ao fork de tela dupla.
+- **Bruno Cruz** — edição 3DS, interface, qualidade de vida, RetroAchievements, Full View e manutenção desta versão.
 
 ## Licença e aviso legal
 
-O código-fonte é distribuído sob a [GPL-3.0](LICENSE). Componentes de terceiros mantêm suas próprias licenças.
+O código-fonte é distribuído sob a [GPL-3.0](LICENSE). Componentes de terceiros mantêm suas próprias licenças conforme [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
 
-*The Legend of Zelda* e *The Minish Cap* pertencem à Nintendo. Este projeto é uma iniciativa de fãs, sem afiliação ou endosso da Nintendo.
+Nintendo é proprietária de The Legend of Zelda, The Minish Cap e de todo o conteúdo associado ao jogo.
+
+Este é um projeto não oficial feito por fãs e não possui afiliação ou endosso da Nintendo.
+
+Nenhuma ROM, asset extraído da Nintendo, save ou firmware é distribuído com este projeto.
