@@ -28,6 +28,7 @@ static _Atomic bool sHeartMapMarkers = true;
 static _Atomic bool sStartAtFileSelect;
 static _Atomic bool sColorCorrection;
 static _Atomic bool sAutosave;
+static _Atomic int sUiLanguage; /* 0 pt-BR, 1 en, 2 es */
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
@@ -93,6 +94,7 @@ static void SaveConfig(void) {
     fprintf(file, "start_at_file_select=%u\n", sStartAtFileSelect ? 1u : 0u);
     fprintf(file, "color_correction=%u\n", sColorCorrection ? 1u : 0u);
     fprintf(file, "autosave=%u\n", sAutosave ? 1u : 0u);
+    fprintf(file, "ui_language=%s\n", sUiLanguage == 1 ? "en" : (sUiLanguage == 2 ? "es" : "pt-br"));
     fprintf(file, "widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     fprintf(file, "screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
     fprintf(file, "display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
@@ -170,6 +172,11 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "start_at_file_select") == 0) sStartAtFileSelect = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
+            else if (strcmp(key, "ui_language") == 0) {
+                if (!strcmp(value, "en")) sUiLanguage = 1;
+                else if (!strcmp(value, "es")) sUiLanguage = 2;
+                else sUiLanguage = 0;
+            }
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
                 sAspectRatio = ParseBool(value) ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
             else if (strcmp(key, "screen_aspect") == 0) {
@@ -332,6 +339,19 @@ int Port_Config_GetSecondScreenBackdrop(void) { return sBackdrop; }
 void Port_Config_SetSecondScreenBackdrop(int style) { sBackdrop = style; SaveConfig(); }
 bool Port_Config_GetSecondScreenSwap(void) { return false; }
 void Port_Config_SetSecondScreenSwap(bool on) { (void)on; }
+
+int Port_Config_GetUiLanguage(void) {
+    int language = sUiLanguage;
+    return language >= 0 && language <= 2 ? language : 0;
+}
+void Port_Config_SetUiLanguage(int language) {
+    if (language < 0 || language > 2) language = 0;
+    sUiLanguage = language;
+    SaveConfig();
+}
+void Port_Config_CycleUiLanguage(void) {
+    Port_Config_SetUiLanguage((Port_Config_GetUiLanguage() + 1) % 3);
+}
 bool Port_Config_GetHideTopHud(void) { return sHideHud; }
 void Port_Config_SetHideTopHud(bool on) { sHideHud = on; SaveConfig(); }
 float Port_Config_GetPracticeSlowmo(void) { return 1.0f; }
