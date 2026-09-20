@@ -45,6 +45,43 @@ for name in ('curl.tar.xz', 'jansson.tar.gz'):
         if folder.startswith('curl'):
             run(['patch', '-p1', '-i', recipe / 'curl.patch'], source / folder)
 
+            # curl 8.4 configures mbedTLS RNG after mbedtls_ssl_setup().
+            # That worked with older mbedTLS, but mbedTLS 3.6 validates more of
+            # the config during ssl_setup and can reject it as incomplete.
+            # Move ssl_setup after conf_rng, matching modern curl's backend.
+            mbedtls_c = source / folder / 'lib' / 'vtls' / 'mbedtls.c'
+            text = mbedtls_c.read_text()
+            old_setup = '''  mbedtls_ssl_init(&backend->ssl);
+  if(mbedtls_ssl_setup(&backend->ssl, &backend->config)) {
+    failf(data, "mbedTLS: ssl_init failed");
+    return CURLE_SSL_CONNECT_ERROR;
+  }
+
+'''
+            if old_setup not in text:
+                raise SystemExit('curl mbedTLS ssl_setup block not found')
+            text = text.replace(old_setup, '  mbedtls_ssl_init(&backend->ssl);\\n\\n', 1)
+            old_rng = '''  mbedtls_ssl_conf_rng(&backend->config, mbedtls_ctr_drbg_random,
+                       &backend->ctr_drbg);
+  mbedtls_ssl_set_bio(&backend->ssl, cf,
+'''
+            new_rng = '''  mbedtls_ssl_conf_rng(&backend->config, mbedtls_ctr_drbg_random,
+                       &backend->ctr_drbg);
+
+  ret = mbedtls_ssl_setup(&backend->ssl, &backend->config);
+  if(ret) {
+    mbedtls_strerror(ret, errorbuf, sizeof(errorbuf));
+    failf(data, "mbedTLS: ssl_setup failed (-0x%04X) %s", -ret, errorbuf);
+    return CURLE_SSL_CONNECT_ERROR;
+  }
+
+  mbedtls_ssl_set_bio(&backend->ssl, cf,
+'''
+            if old_rng not in text:
+                raise SystemExit('curl mbedTLS RNG block not found')
+            text = text.replace(old_rng, new_rng, 1)
+            mbedtls_c.write_text(text)
+
 # Build and install the exact mbedTLS submodule used by RetroAchievements.
 # libcurl is compiled against these headers/libs, but the final game links the
 # in-tree CMake mbedTLS targets, avoiding a second TLS ABI in the executable.
