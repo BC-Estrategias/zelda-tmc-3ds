@@ -55,6 +55,53 @@ jobs:
             command -v "$tool"
           done
 
+      - name: Install CIA packaging tools
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import urllib.request
+          import zipfile
+
+          root = Path("/tmp/tmc-3ds-tools")
+          root.mkdir(parents=True, exist_ok=True)
+
+          downloads = [
+              (
+                  "makerom.zip",
+                  "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip",
+                  "287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e",
+              ),
+              (
+                  "bannertool.zip",
+                  "https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip",
+                  None,
+              ),
+          ]
+
+          for name, url, expected_sha256 in downloads:
+              archive = root / name
+              urllib.request.urlretrieve(url, archive)
+              if expected_sha256:
+                  digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+                  if digest != expected_sha256:
+                      raise SystemExit(f"Checksum mismatch for {name}: {digest}")
+              out = root / name.removesuffix(".zip")
+              out.mkdir(exist_ok=True)
+              with zipfile.ZipFile(archive) as zf:
+                  zf.extractall(out)
+          PY
+
+          MAKEROM="$(find /tmp/tmc-3ds-tools/makerom -type f -name makerom -print -quit)"
+          BANNERTOOL="$(find /tmp/tmc-3ds-tools/bannertool -type f -name bannertool -print -quit)"
+          test -n "$MAKEROM"
+          test -n "$BANNERTOOL"
+          install -m 0755 "$MAKEROM" /usr/local/bin/makerom
+          install -m 0755 "$BANNERTOOL" /usr/local/bin/bannertool
+          command -v makerom
+          command -v bannertool
+
       - name: Build CIA and 3DSX
         run: ./platform/3ds/build.sh
 
