@@ -37,7 +37,7 @@ jobs:
       - name: Initialize required submodules
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git submodule update --init third_party/mbedtls third_party/rcheevos
+          git submodule update --init --recursive third_party/mbedtls third_party/rcheevos
 
       - name: Read version
         id: meta
