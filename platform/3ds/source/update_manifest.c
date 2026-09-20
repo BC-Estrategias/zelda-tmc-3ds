@@ -100,46 +100,75 @@ int Update_ParseRelease(const char *data, size_t size, bool pre, bool homebrew, 
 
 // Plain-text, word-wrapped release body for a 42-column handheld display.
 // Image/link destinations and Markdown markers are presentation, never actions.
-unsigned Update_FormatNotes(const char *md, char lines[][43], unsigned capacity) {
+static size_t Update_Utf8CharBytes(const unsigned char *p) {
+  if (!p || !p[0] || p[0] < 0x80) return 1;
+  if ((p[0] & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) return 2;
+  if ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) return 3;
+  if ((p[0] & 0xF8) == 0xF0 && (p[1] & 0xC0) == 0x80 &&
+      (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) return 4;
+  return 1;
+}
+
+// Plain-text, word-wrapped release body for a 42-character handheld display.
+// UTF-8 is preserved; wrapping counts codepoints instead of bytes.
+unsigned Update_FormatNotes(const char *md, char lines[][UPDATE_NOTE_LINE_BYTES], unsigned capacity) {
   char clean[12289]; size_t n = 0;
-  // TMC release bodies start with an experimental notice and QR. The handheld
-  // changelog begins at the explicitly labelled section when one is present.
   const char *section = md ? strstr(md, "## Changelog") : NULL;
   if (section) md = section;
 
   for (size_t i = 0; md && md[i] && n < sizeof(clean)-1;) {
     if (md[i] == '<') {
-      const char *end = strchr(md+i, '>');
-      if (end) { i = end-md+1; continue; }
+      const char *tagEnd = strchr(md+i, '>');
+      if (tagEnd) { i = (size_t)(tagEnd-md+1); continue; }
     }
     if (md[i] == '!' && md[i+1] == '[') {
-      const char *end = strstr(md+i, ")");
-      if (end) { i = end-md+1; continue; }
+      const char *imageEnd = strstr(md+i, ")");
+      if (imageEnd) { i = (size_t)(imageEnd-md+1); continue; }
     }
     if (md[i] == '[') { i++; continue; }
     if (md[i] == ']' && md[i+1] == '(') {
-      const char *end = strchr(md+i+2, ')');
-      if (end) { i = end-md+1; continue; }
+      const char *linkEnd = strchr(md+i+2, ')');
+      if (linkEnd) { i = (size_t)(linkEnd-md+1); continue; }
     }
-    unsigned char c = md[i++];
-    if (c == '*' || c == '`' || c == '#' || c == '\r') continue;
-    if (c >= 128) continue;
-    clean[n++] = c;
+    unsigned char ch = (unsigned char)md[i];
+    if (ch == '*' || ch == '`' || ch == '#' || ch == '\r') { i++; continue; }
+    size_t bytes = Update_Utf8CharBytes((const unsigned char*)md+i);
+    if (n + bytes >= sizeof(clean)) break;
+    memcpy(clean+n, md+i, bytes);
+    n += bytes; i += bytes;
   }
   clean[n] = 0;
+
   unsigned count = 0; const char *p = clean;
   while (*p && count < capacity) {
     while (*p == ' ' || (*p == '\n' && (!count || !lines[count-1][0]))) p++;
     if (!*p) break;
-    const char *end = strchr(p, '\n'); if (!end) end = p + strlen(p);
-    size_t take = end-p;
-    if (take > 42) {
-      take = 42;
-      while (take && p[take] != ' ') take--;
-      if (!take) take = 42;
+
+    const char *lineEnd = strchr(p, '\n');
+    if (!lineEnd) lineEnd = p + strlen(p);
+
+    size_t bytes = 0, chars = 0, lastSpace = 0;
+    const char *q = p;
+    while (q < lineEnd && chars < 42) {
+      size_t step = Update_Utf8CharBytes((const unsigned char*)q);
+      if (q + step > lineEnd || bytes + step >= UPDATE_NOTE_LINE_BYTES) break;
+      if (*q == ' ') lastSpace = bytes;
+      q += step; bytes += step; chars++;
     }
-    memcpy(lines[count], p, take); lines[count++][take] = 0;
-    p += take; if (*p == '\n') p++;
+
+    size_t take = bytes;
+    if (q < lineEnd && lastSpace) take = lastSpace;
+    if (lineEnd == p) take = 0;
+    memcpy(lines[count], p, take);
+    lines[count++][take] = 0;
+
+    p += take;
+    while (*p == ' ') p++;
+    if (*p == '\n') p++;
+    else if (take == 0 && *p) {
+      size_t step = Update_Utf8CharBytes((const unsigned char*)p);
+      p += step;
+    }
   }
   if (!count && capacity) { strcpy(lines[0], "No changelog provided."); count = 1; }
   return count;
