@@ -118,6 +118,8 @@ static int transfer_progress(void *p, curl_off_t total, curl_off_t now, curl_off
 }
 static bool fetch(const char *url, Transfer *t) {
   CURL *c = curl_easy_init(); if (!c) return false;
+  char curl_error[CURL_ERROR_SIZE] = {0};
+  curl_easy_setopt(c, CURLOPT_ERRORBUFFER, curl_error);
   curl_easy_setopt(c, CURLOPT_URL, url);
   curl_easy_setopt(c, CURLOPT_USERAGENT, "Minish-Cap-3DS/" TMC_PORT_VERSION);
   curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
@@ -149,7 +151,8 @@ static bool fetch(const char *url, Transfer *t) {
   }
   curl_easy_cleanup(c);
   if (code != CURLE_OK || http != 200) {
-    UpdateLog("Updater transfer failed: curl=%d http=%ld", code, http);
+    UpdateLog("Updater transfer failed: curl=%d (%s) http=%ld detail=%s",
+      code, curl_easy_strerror(code), http, curl_error[0] ? curl_error : "(none)");
     return false;
   }
   return true;
@@ -223,7 +226,7 @@ static bool install_3dsx(void) {
   remove(backup); return true;
 }
 static void run_job(void *arg) {
-  void *soc_buffer = NULL; bool soc_owned = false, ps_owned = false, curl_ready = false, ac_ready = false, ssl_ready = false;
+  void *soc_buffer = NULL; bool soc_owned = false, ps_owned = false, curl_ready = false, ac_ready = false;
   bool ok = false; Transfer t = {0};
   UpdateStatus s; Updater_GetStatus(&s);
   if (R_FAILED(acInit())) goto done;
@@ -240,9 +243,9 @@ static void run_job(void *arg) {
     ps_owned = true;
     if (psa_crypto_init() != PSA_SUCCESS) goto done;
   }
-  // The linked mbedTLS entropy callback needs the SSL service on both models.
-  if (R_FAILED(sslcInit(0))) { publish(UPDATE_ERROR, "TLS SERVICE FAILED"); goto done; }
-  ssl_ready = true;
+  /* libcurl uses the in-process mbedTLS backend in this build. Its entropy
+   * hook uses ps:ps, not the 3DS ssl:C service. Initializing ssl:C here mixes
+   * two independent TLS stacks and is unnecessary. */
   if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) goto done;
   curl_ready = true;
   if (!download_job) {
@@ -282,7 +285,6 @@ done:
   free(t.data);
   if (download_job) remove(UPDATE_PART);
   if (curl_ready) curl_global_cleanup();
-  if (ssl_ready) sslcExit();
   if (ps_owned) psExit();
   if (soc_owned) socExit();
   free(soc_buffer);
