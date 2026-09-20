@@ -201,13 +201,22 @@ set_source_files_properties(
 target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections)
 set(UPDATE_DEPS_ROOT "$ENV{DEVKITPRO}/portlibs/3ds" CACHE PATH "3DS updater dependencies")
 target_include_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/include")
-target_link_directories(tmc-3ds PRIVATE "${UPDATE_DEPS_ROOT}/lib")
+
+set(TMC_UPDATE_CURL "${UPDATE_DEPS_ROOT}/lib/libcurl.a")
+set(TMC_UPDATE_JANSSON "${UPDATE_DEPS_ROOT}/lib/libjansson.a")
+if(NOT EXISTS "${TMC_UPDATE_CURL}")
+    message(FATAL_ERROR "Updater libcurl not found: ${TMC_UPDATE_CURL}")
+endif()
+if(NOT EXISTS "${TMC_UPDATE_JANSSON}")
+    message(FATAL_ERROR "Updater jansson not found: ${TMC_UPDATE_JANSSON}")
+endif()
+
 find_library(TMC_UPDATE_ZLIB NAMES z PATHS "${UPDATE_DEPS_ROOT}/lib"
     "$ENV{DEVKITPRO}/portlibs/3ds/lib" NO_DEFAULT_PATH)
 if(TMC_UPDATE_ZLIB)
-    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
+    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d "${TMC_UPDATE_CURL}" "${TMC_UPDATE_JANSSON}" mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
 else()
-    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
+    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d "${TMC_UPDATE_CURL}" "${TMC_UPDATE_JANSSON}" mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
 endif()
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
