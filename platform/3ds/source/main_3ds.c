@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include "updater.h"
 
 #include "port_audio.h"
 #include "port_ppu.h"
@@ -69,8 +70,6 @@ static int FindRom(char* out, size_t outSize) {
 }
 
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
     if (!Platform3DS_Init()) return 1;
     Platform3DS_ShowSplash();
     /* The boot splash is intentionally silent.  Route diagnostics to SVC
@@ -121,9 +120,11 @@ int main(int argc, char** argv) {
     Port_RetroAchievements_AutoLogin();
     Port_PPU_Init(NULL);
     (void)Port_Audio_Init();
+    Updater_Init(argc > 0 ? argv[0] : NULL);
 
     AgbMain();
 
+    Updater_Shutdown();
     Port_PPU_Shutdown();
     Port_RetroAchievements_Shutdown();
     Platform3DS_Shutdown();
