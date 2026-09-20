@@ -94,9 +94,9 @@ jobs:
           PY
 
           MAKEROM="$(find /tmp/tmc-3ds-tools/makerom -type f -name makerom -print -quit)"
-          BANNERTOOL="$(find /tmp/tmc-3ds-tools/bannertool -type f -name bannertool -print -quit)"
+          BANNERTOOL="/tmp/tmc-3ds-tools/bannertool/linux-x86_64/bannertool"
           test -n "$MAKEROM"
-          test -n "$BANNERTOOL"
+          test -f "$BANNERTOOL"
           install -m 0755 "$MAKEROM" /usr/local/bin/makerom
           install -m 0755 "$BANNERTOOL" /usr/local/bin/bannertool
           command -v makerom
