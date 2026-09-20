@@ -111,10 +111,10 @@ AccessControlInfo:
 SystemControlInfo:
   SaveDataSize: 0KB
   # This is the install/update revision seen by the 3DS system, distinct
-  # from the human-readable 1.0 title string.  Bump it so a 1.0 CIA
+  # from the human-readable release title. Bump it so a newer CIA
   # replaces the older experimental E-series package instead of leaving its
   # suspended-software metadata cached in place.
-  RemasterVersion: 118
+  RemasterVersion: 119
   StackSize: 0x40000
   Dependency:
     cfg: 0x0004013000001702
