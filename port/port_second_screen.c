@@ -220,6 +220,7 @@ enum {
     SS_SET_BACKDROP,      /* second_screen_backdrop: cycles SS_BACKDROP_* */
     SS_SET_SWAP_SCREENS,  /* second_screen_swap; applied at the next launch */
 #ifdef TMC_3DS
+    SS_SET_UI_LANGUAGE,
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
 #endif
@@ -1887,17 +1888,61 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /*  Settings panel                                                     */
 /* ------------------------------------------------------------------ */
 
-static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "HUD SUPERIOR",     "TELA LARGA",         "CAMERA SEGUE",     "MARCAS DO VENTO",
-    "RETORNO DE ANDAR", "VELOCIDADE TURBO",   "VELOCIDADE LINK", "TEXTO RAPIDO",
-    "CARGA ESPADA",     "PORTAL RAPIDO",    "KINSTONE RAPIDO", "MINIATURAS RAPIDAS", "CORACOES NO MAPA", "VOLUME PRINCIPAL",
-    "SALVAR AUTOMATICO",
-    "CORRECAO DE COR",  "MOSTRAR FPS",        "SEGURE P/ AVANCAR", "INICIAR: ARQUIVOS",
-    "ALEATORIZADOR",    "FUNDO DO PAINEL",     "TROCAR TELAS",
 #ifdef TMC_3DS
-    "PROPORCAO",        "ESTILO DE IMAGEM",
+static const char* UiText3(const char* pt, const char* en, const char* es) {
+    switch (Port_Config_GetUiLanguage()) {
+        case 1: return en;
+        case 2: return es;
+        default: return pt;
+    }
+}
+#else
+static const char* UiText3(const char* pt, const char* en, const char* es) {
+    (void)en; (void)es; return pt;
+}
+#endif
+
+static const char* const kSettingLabelsPt[SS_SET_COUNT] = {
+    "HUD SUPERIOR", "TELA LARGA", "CÂMERA SEGUE", "MARCAS DO VENTO",
+    "RETORNO DE ANDAR", "VELOCIDADE TURBO", "VELOCIDADE LINK", "TEXTO RÁPIDO",
+    "CARGA ESPADA", "PORTAL RÁPIDO", "KINSTONE RÁPIDO", "MINIATURAS RÁPIDAS",
+    "CORAÇÕES NO MAPA", "VOLUME PRINCIPAL", "SALVAR AUTOMÁTICO", "CORREÇÃO DE COR",
+    "MOSTRAR FPS", "SEGURE P/ AVANÇAR", "INICIAR: ARQUIVOS", "ALEATORIZADOR",
+    "FUNDO DO PAINEL", "TROCAR TELAS",
+#ifdef TMC_3DS
+    "IDIOMA", "PROPORÇÃO", "ESTILO DE IMAGEM",
 #endif
 };
+static const char* const kSettingLabelsEn[SS_SET_COUNT] = {
+    "TOP HUD", "WIDESCREEN", "FOLLOW CAMERA", "WIND CRESTS",
+    "FLOOR RETURN", "TURBO SPEED", "LINK SPEED", "FAST TEXT",
+    "FAST SWORD CHARGE", "FAST MINISH PORTAL", "QUICK KINSTONES", "QUICK FIGURINES",
+    "HEARTS ON MAP", "MASTER VOLUME", "AUTOSAVE", "COLOR CORRECTION",
+    "SHOW FPS", "HOLD TO ADVANCE", "START: FILE SELECT", "RANDOMIZER",
+    "PANEL BACKDROP", "SWAP SCREENS",
+#ifdef TMC_3DS
+    "LANGUAGE", "ASPECT RATIO", "IMAGE STYLE",
+#endif
+};
+static const char* const kSettingLabelsEs[SS_SET_COUNT] = {
+    "HUD SUPERIOR", "PANTALLA ANCHA", "CÁMARA SIGUE", "MARCAS DEL VIENTO",
+    "RETORNO DE PISO", "VELOCIDAD TURBO", "VELOCIDAD LINK", "TEXTO RÁPIDO",
+    "CARGA ESPADA", "PORTAL RÁPIDO", "KINSTONES RÁPIDOS", "FIGURAS RÁPIDAS",
+    "CORAZONES EN MAPA", "VOLUMEN PRINCIPAL", "AUTOGUARDADO", "CORRECCIÓN DE COLOR",
+    "MOSTRAR FPS", "MANTENER P/ AVANZAR", "INICIAR: ARCHIVOS", "ALEATORIZADOR",
+    "FONDO DEL PANEL", "CAMBIAR PANTALLAS",
+#ifdef TMC_3DS
+    "IDIOMA", "PROPORCIÓN", "ESTILO DE IMAGEN",
+#endif
+};
+static const char* SettingLabel(int setting) {
+    int lang = 0;
+#ifdef TMC_3DS
+    lang = Port_Config_GetUiLanguage();
+#endif
+    if (setting < 0 || setting >= SS_SET_COUNT) return "";
+    return lang == 1 ? kSettingLabelsEn[setting] : (lang == 2 ? kSettingLabelsEs[setting] : kSettingLabelsPt[setting]);
+}
 
 /* Value words of the PANEL BACKDROP row, indexed by SS_BACKDROP_*. The
  * default reads PATTERN rather than "PARCHMENT" because what actually
@@ -1922,6 +1967,7 @@ static const char* SettingValueMinWord(int setting) {
         case SS_SET_BACKDROP: return "PADRAO";
         case SS_SET_SWAP_SCREENS: return "REINICIAR";
 #ifdef TMC_3DS
+        case SS_SET_UI_LANGUAGE: return "PORTUGUÊS";
         case SS_SET_ASPECT_RATIO: return "ORIGINAL";
         case SS_SET_DISPLAY_STYLE: return "PIXEL PERFEITO";
 #endif
@@ -1943,6 +1989,7 @@ static int SettingsPageRows(int page, uint8_t* out) {
     int n = 0;
     if (page == SS_SETTINGS_SCREEN) {
 #ifdef TMC_3DS
+        out[n++] = SS_SET_UI_LANGUAGE;
         out[n++] = SS_SET_ASPECT_RATIO;
         out[n++] = SS_SET_DISPLAY_STYLE;
         out[n++] = SS_SET_TOP_HUD;
@@ -1987,19 +2034,19 @@ static int SettingsPageRows(int page, uint8_t* out) {
 
 static const char* SettingsPageTitle(int page) {
     switch (page) {
-        case SS_SETTINGS_SCREEN: return "TELA";
-        case SS_SETTINGS_GAMEPLAY: return "JOGO";
-        case SS_SETTINGS_QOL: return "QUALIDADE DE VIDA";
-        case SS_SETTINGS_DEVELOPER: return "DESENVOLVEDOR";
+        case SS_SETTINGS_SCREEN: return UiText3("TELA", "DISPLAY", "PANTALLA");
+        case SS_SETTINGS_GAMEPLAY: return UiText3("JOGO", "GAMEPLAY", "JUEGO");
+        case SS_SETTINGS_QOL: return UiText3("QUALIDADE DE VIDA", "QUALITY OF LIFE", "CALIDAD DE VIDA");
+        case SS_SETTINGS_DEVELOPER: return UiText3("DESENVOLVEDOR", "DEVELOPER", "DESARROLLADOR");
         case SS_SETTINGS_STATES: return "SAVE STATES";
-        case SS_SETTINGS_OVERLAY: return "SOBREPOSICAO";
-        case SS_SETTINGS_RANDOMIZER: return "ALEATORIZADOR";
+        case SS_SETTINGS_OVERLAY: return UiText3("SOBREPOSIÇÃO", "OVERLAY", "SUPERPOSICIÓN");
+        case SS_SETTINGS_RANDOMIZER: return UiText3("ALEATORIZADOR", "RANDOMIZER", "ALEATORIZADOR");
 #ifdef TMC_3DS
-        case SS_SETTINGS_UPDATE: return "ATUALIZACAO";
+        case SS_SETTINGS_UPDATE: return UiText3("ATUALIZAÇÃO", "UPDATE", "ACTUALIZACIÓN");
 #endif
-        case SS_SETTINGS_RETROACHIEVEMENTS: return "CONQUISTAS";
-        case SS_SETTINGS_RETRO_LIST: return "LISTA";
-        default: return "AJUSTES";
+        case SS_SETTINGS_RETROACHIEVEMENTS: return UiText3("CONQUISTAS", "ACHIEVEMENTS", "LOGROS");
+        case SS_SETTINGS_RETRO_LIST: return UiText3("LISTA", "LIST", "LISTA");
+        default: return UiText3("AJUSTES", "SETTINGS", "AJUSTES");
     }
 }
 
@@ -2039,7 +2086,7 @@ static void DrawSettingsBack(const SSurf* s, TargetList* tl, float x0, float y0,
     if (w < 54) w = 54;
     /* Header controls use a larger fixed text scale than setting rows. Keep
      * this concise so it remains visible on the 320px bottom screen. */
-    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, "MENU", 0, 0, u, ts);
+    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, UiText3("MENU", "MENU", "MENÚ"), 0, 0, u, ts);
     AddTarget(tl, x0, y0, x0 + w, y0 + h, SS_ACT_SETTINGS_BACK, (uint8_t)backPage);
 }
 
@@ -2071,7 +2118,7 @@ static void DrawSettingsValueRow(const SSurf* s, TargetList* tl, float x0, float
                                     (int32_t)cw, (int32_t)ch, cts, on ? SS_CHIP_RED : SS_CHIP_DARK);
     MenuTextCentered(s, val, (cx0 + cx1) / 2, cy0 + ch / 2, ms, SS_TEXT_WHITE);
 
-    MenuTextDraw(s, kSettingLabels[setting], (int32_t)(x0 + 18 * u),
+    MenuTextDraw(s, SettingLabel(setting), (int32_t)(x0 + 18 * u),
                  (int32_t)((y0 + y1) / 2 - 8 * ms), ms, SS_TEXT_NAVY);
     AddTarget(tl, x0, y0, x1, y1, SS_ACT_SETTING, (uint8_t)setting);
 }
@@ -2346,6 +2393,12 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_ASPECT_RATIO:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSAspectRatioName());
             return 1;
+        case SS_SET_UI_LANGUAGE: {
+            static const char* const names[] = { "PORTUGUÊS", "ENGLISH", "ESPAÑOL" };
+            int lang = Port_Config_GetUiLanguage();
+            snprintf(out, (size_t)outCap, "%s", names[lang >= 0 && lang <= 2 ? lang : 0]);
+            return 1;
+        }
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
@@ -2387,8 +2440,14 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        static const char* const labels[7] = {
-            "TELA", "JOGO", "QUAL. VIDA", "CONQUISTAS", "ATUALIZACAO", "DESENVOLVEDOR", "ALEATORIZADOR"
+        const char* labels[7] = {
+            UiText3("TELA", "DISPLAY", "PANTALLA"),
+            UiText3("JOGO", "GAMEPLAY", "JUEGO"),
+            UiText3("QUAL. VIDA", "QUALITY", "CALIDAD"),
+            UiText3("CONQUISTAS", "ACHIEVEMENTS", "LOGROS"),
+            UiText3("ATUALIZAÇÃO", "UPDATE", "ACTUALIZACIÓN"),
+            UiText3("DESENVOLVEDOR", "DEVELOPER", "DESARROLLADOR"),
+            UiText3("ALEATORIZADOR", "RANDOMIZER", "ALEATORIZADOR")
         };
         static const uint8_t pages[7] = {
             SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_RETROACHIEVEMENTS,
@@ -3100,10 +3159,10 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
     float x0 = 8 * u, xr = sx0 - 8 * u, gap = 8 * u;
     float bw = (xr - x0 - 3 * gap) / 4.0f;
 
-    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "MISSOES", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
-    DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, "MAPA", activeTab == SS_TAB_MAP,
+    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, UiText3("MISSÕES", "QUESTS", "MISIONES"), activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
+    DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, UiText3("MAPA", "MAP", "MAPA"), activeTab == SS_TAB_MAP,
                   SS_TAB_MAP, u, ts);
-    DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, "ITENS",
+    DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, UiText3("ITENS", "ITEMS", "OBJETOS"),
                   activeTab == SS_TAB_ITEMS, SS_TAB_ITEMS, u, ts);
     DrawTabButton(s, tl, x0 + 3 * (bw + gap), y, x0 + 4 * bw + 3 * gap, y + bh, "CHEATS",
                   activeTab == SS_TAB_CHEATS, SS_TAB_CHEATS, u, ts);
@@ -3517,6 +3576,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     Port_Config_SetWidescreenEnabled(!Port_Config_WidescreenEnabled());
                     break;
 #ifdef TMC_3DS
+                case SS_SET_UI_LANGUAGE:
+                    Port_Config_CycleUiLanguage();
+                    break;
                 case SS_SET_ASPECT_RATIO:
                     Port_Config_Cycle3DSAspectRatio();
                     break;
