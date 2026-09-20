@@ -19,7 +19,7 @@ Ports can enter the file-select path with different palette state, so E4 loads t
 
 ## Test
 
-After updating to v1.1-E4:
+After updating to v1.1-E4, validate the retail palette fix:
 
 1. Open the save-file selection screen.
 2. Check full and empty heart colors.
