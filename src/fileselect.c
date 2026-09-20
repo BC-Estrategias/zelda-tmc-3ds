@@ -1038,6 +1038,14 @@ static void HandleFileScreenEnter(void) {
     InitVBlankDMA();
     sub_080503A8(0x5);
     LoadPaletteGroup(0x9);
+#ifdef PC_PORT
+    /* Palette group 0x9 contains the retail file-select heart colors in
+     * OBJ palette 15 (destination palette 31 / gPalette_14). The PC/3DS
+     * file-card heart tilemap samples BG palette 15 instead, which otherwise
+     * remains zeroed and renders every heart black. Mirror the already-loaded
+     * retail palette into BG slot 15 instead of inventing a replacement ramp. */
+    LoadPalettes((const u8*)(gPaletteBuffer + 31 * 16), 15, 1);
+#endif
     for (i = 0; i < 26; i++) {
         CreateObject(FILE_SCREEN_OBJECTS, i, 0);
     }
