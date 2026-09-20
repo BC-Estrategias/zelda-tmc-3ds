@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'prerelease/**'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -137,7 +138,11 @@ jobs:
 
   publish:
     name: Publish release
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
+      (github.event_name == 'push' &&
+       startsWith(github.ref, 'refs/heads/prerelease/') &&
+       startsWith(github.event.head_commit.message, 'release:'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
