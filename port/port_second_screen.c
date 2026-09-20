@@ -1951,9 +1951,18 @@ static const char* SettingLabel(int setting) {
  * appends so stored config values keep meaning the same style — it is not
  * a brightness ramp (DARK sits mid-list). Every word here is inside
  * SS_SET_WIDEST_VALUE, so none of them widen the value chip. */
-static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
-    "PADRAO", "CREME", "ESCURO", "SUAVE", "PEDRA", "ARDOSIA", "MARINHO"
-};
+static const char* BackdropWord(int style) {
+    static const char* const pt[SS_BACKDROP_COUNT] = { "PADRÃO", "CREME", "ESCURO", "SUAVE", "PEDRA", "ARDÓSIA", "MARINHO" };
+    static const char* const en[SS_BACKDROP_COUNT] = { "PATTERN", "CREAM", "DARK", "SOFT", "STONE", "SLATE", "NAVY" };
+    static const char* const es[SS_BACKDROP_COUNT] = { "PATRÓN", "CREMA", "OSCURO", "SUAVE", "PIEDRA", "PIZARRA", "MARINO" };
+    if (style < 0 || style >= SS_BACKDROP_COUNT) style = 0;
+#ifdef TMC_3DS
+    const int lang = Port_Config_GetUiLanguage();
+    return lang == 1 ? en[style] : (lang == 2 ? es[style] : pt[style]);
+#else
+    return pt[style];
+#endif
+}
 
 /* Reserve only the width a row can actually use. A single global value
  * column sized for PATTERN needlessly crowded long GAMEPLAY labels even
@@ -1964,7 +1973,7 @@ static const char* SettingValueMinWord(int setting) {
         case SS_SET_TURBO: return "X5";
         case SS_SET_PLAYER_SPEED: return "1.5X";
         case SS_SET_VOLUME: return "100";
-        case SS_SET_BACKDROP: return "PADRAO";
+        case SS_SET_BACKDROP: return UiText3("PADRÃO", "PATTERN", "PATRÓN");
         case SS_SET_SWAP_SCREENS: return "REINICIAR";
 #ifdef TMC_3DS
         case SS_SET_UI_LANGUAGE: return "PORTUGUÊS";
@@ -2234,17 +2243,17 @@ static void DrawCheatActionRow(const SSurf* s, TargetList* tl, float x0, float y
 
 static void PaintCheatsPanel(const SSurf* s, TargetList* tl, float rx0, float ry0, float rx1, float ry1,
                              float u, int32_t ts) {
-    static const struct {
+    const struct {
         const char* label;
         const char* value;
         SecondScreenResource resource;
     } rows[] = {
-        { "RECUPERAR VIDA", "CHEIO", SECOND_SCREEN_RESOURCE_HEARTS },
-        { "RUPIAS", "999", SECOND_SCREEN_RESOURCE_RUPEES },
-        { "CONCHAS", "999", SECOND_SCREEN_RESOURCE_SHELLS },
+        { UiText3("RECUPERAR VIDA", "RESTORE HEALTH", "RECUPERAR VIDA"), UiText3("CHEIO", "FULL", "LLENO"), SECOND_SCREEN_RESOURCE_HEARTS },
+        { UiText3("RÚPIAS", "RUPEES", "RUPIAS"), "999", SECOND_SCREEN_RESOURCE_RUPEES },
+        { UiText3("CONCHAS", "SHELLS", "CONCHAS"), "999", SECOND_SCREEN_RESOURCE_SHELLS },
         { "KINSTONES", "99", SECOND_SCREEN_RESOURCE_KINSTONES },
-        { "BOMBAS", "CHEIO", SECOND_SCREEN_RESOURCE_BOMBS },
-        { "FLECHAS", "CHEIO", SECOND_SCREEN_RESOURCE_ARROWS },
+        { UiText3("BOMBAS", "BOMBS", "BOMBAS"), UiText3("CHEIO", "FULL", "LLENO"), SECOND_SCREEN_RESOURCE_BOMBS },
+        { UiText3("FLECHAS", "ARROWS", "FLECHAS"), UiText3("CHEIO", "FULL", "LLENO"), SECOND_SCREEN_RESOURCE_ARROWS },
     };
 
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)rx0, (int32_t)ry0,
@@ -2252,7 +2261,7 @@ static void PaintCheatsPanel(const SSurf* s, TargetList* tl, float rx0, float ry
     float ix0 = rx0 + 12 * u, ix1 = rx1 - 12 * u;
     int32_t hms = (int32_t)(2.3f * u);
     if (hms < 1) hms = 1;
-    DrawPanelHeaderChip(s, (rx0 + rx1) / 2, ry0 + 8 * u, "CHEATS", hms, u);
+    DrawPanelHeaderChip(s, (rx0 + rx1) / 2, ry0 + 8 * u, UiText3("CHEATS", "CHEATS", "TRUCOS"), hms, u);
     float y0 = ry0 + MENU_TEXT_BOX * hms + 34 * u;
     float gap = 6 * u;
     const unsigned count = sizeof(rows) / sizeof(rows[0]);
@@ -2266,7 +2275,7 @@ static void PaintCheatsPanel(const SSurf* s, TargetList* tl, float rx0, float ry
 static void PaintStateSlotsPanel(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1,
                                  float u, int32_t ts, uint32_t tick, uint32_t saveFlashUntil,
                                  int saveSlot, int saveSucceeded) {
-    static const char* const names[] = { "RAPIDO", "SLOT 1", "SLOT 2", "SLOT 3" };
+    const char* names[] = { UiText3("RÁPIDO", "QUICK", "RÁPIDO"), "SLOT 1", "SLOT 2", "SLOT 3" };
     const float gap = 8 * u;
     const float rowH = (y1 - y0 - 3 * gap) / 4.0f;
     for (unsigned slot = 0; slot < 4; ++slot) {
@@ -2276,8 +2285,9 @@ static void PaintStateSlotsPanel(const SSurf* s, TargetList* tl, float x0, float
         DrawMenuButton(s, x0, top, labelRight - 3 * u, top + rowH, names[slot], 0, 0, u, ts);
         const int savedHere = (int)slot == saveSlot && (int32_t)(saveFlashUntil - tick) > 0;
         DrawMenuButton(s, labelRight, top, middle - 2 * u, top + rowH,
-                       savedHere ? (saveSucceeded ? "SALVO" : "ERRO") : "SALVAR", 0, 0, u, ts);
-        DrawMenuButton(s, middle + 2 * u, top, x1, top + rowH, "CARREGAR", 0, 0, u, ts);
+                       savedHere ? (saveSucceeded ? UiText3("SALVO", "SAVED", "GUARDADO") : UiText3("ERRO", "ERROR", "ERROR"))
+                                 : UiText3("SALVAR", "SAVE", "GUARDAR"), 0, 0, u, ts);
+        DrawMenuButton(s, middle + 2 * u, top, x1, top + rowH, UiText3("CARREGAR", "LOAD", "CARGAR"), 0, 0, u, ts);
         AddTarget(tl, labelRight, top, middle - 2 * u, top + rowH, SS_ACT_STATE_SAVE, (uint8_t)slot);
         AddTarget(tl, middle + 2 * u, top, x1, top + rowH, SS_ACT_STATE_LOAD, (uint8_t)slot);
     }
@@ -2325,13 +2335,13 @@ static int GetVolumeStop(void) {
  * nonzero when the row should wear the red "active" chip. */
 static int GetSettingState(int row, char* out, int outCap) {
     int on = 0;
-    const char* txt = "DESLIGADO";
+    const char* txt = UiText3("DESLIGADO", "OFF", "APAGADO");
     switch (row) {
         case SS_SET_TOP_HUD:
             /* The row states what the top screen DOES: SHOW is the (red)
              * default, HIDE hands vitals duty to this panel. */
             on = !Port_Config_GetHideTopHud();
-            txt = on ? "MOSTRAR" : "OCULTAR";
+            txt = on ? UiText3("MOSTRAR", "SHOW", "MOSTRAR") : UiText3("OCULTAR", "HIDE", "OCULTAR");
             break;
         case SS_SET_WIDESCREEN: on = Port_Config_WidescreenEnabled(); break;
         case SS_SET_FOLLOW: on = Port_Config_GetSecondScreenFollowCam(); break;
@@ -2374,7 +2384,7 @@ static int GetSettingState(int row, char* out, int outCap) {
              * panel is off the menu's own parchment, which is how every
              * other row reads "not the shipped behaviour". */
             int style = BackdropStyleCfg();
-            snprintf(out, (size_t)outCap, "%s", kBackdropWords[style]);
+            snprintf(out, (size_t)outCap, "%s", BackdropWord(style));
             return style != SS_BACKDROP_PARCHMENT;
         }
         case SS_SET_SWAP_SCREENS: {
@@ -2386,7 +2396,8 @@ static int GetSettingState(int row, char* out, int outCap) {
              * fell back to a normal launch). */
             int want = Port_Config_GetSecondScreenSwap() ? 1 : 0;
             int active = Port_SecondScreen_GameOnSecondaryDisplay();
-            snprintf(out, (size_t)outCap, "%s", want != active ? "REINICIAR" : (want ? "LIGADO" : "DESLIGADO"));
+            snprintf(out, (size_t)outCap, "%s", want != active ? UiText3("REINICIAR", "RESTART", "REINICIAR") :
+                                   (want ? UiText3("LIGADO", "ON", "ENCENDIDO") : UiText3("DESLIGADO", "OFF", "APAGADO")));
             return want;
         }
 #ifdef TMC_3DS
@@ -2405,7 +2416,7 @@ static int GetSettingState(int row, char* out, int outCap) {
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
-        txt = on ? "LIGADO" : "DESLIGADO";
+        txt = on ? UiText3("LIGADO", "ON", "ENCENDIDO") : UiText3("DESLIGADO", "OFF", "APAGADO");
     }
     snprintf(out, (size_t)outCap, "%s", txt);
     return on;
@@ -2486,17 +2497,17 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         if (rowH > 92 * u) rowH = 92 * u;
         char dumpValue[16];
         snprintf(dumpValue, sizeof(dumpValue), "%s",
-                 (int32_t)(dumpFlashUntil - tick) > 0 ? "PRONTO" : "GRAVAR");
-        DrawDeveloperActionRow(s, tl, x0, y0, x1, y0 + rowH, "DUMP MEMORIA", dumpValue,
+                 (int32_t)(dumpFlashUntil - tick) > 0 ? UiText3("PRONTO", "DONE", "LISTO") : UiText3("GRAVAR", "WRITE", "GRABAR"));
+        DrawDeveloperActionRow(s, tl, x0, y0, x1, y0 + rowH, UiText3("DUMP DE MEMÓRIA", "MEMORY DUMP", "DUMP DE MEMORIA"), dumpValue,
                                SS_ACT_DEVELOPER_DUMP, u, ts);
 #ifdef TMC_3DS
         (void)loadStateFlashUntil;
         (void)loadStateResult;
         DrawDeveloperActionRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap, "SAVE STATES",
-                               "ABRIR", SS_ACT_DEVELOPER_STATES, u, ts);
+                               UiText3("ABRIR", "OPEN", "ABRIR"), SS_ACT_DEVELOPER_STATES, u, ts);
         DrawSettingsValueRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "SOBREPOSICAO",
+        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, UiText3("SOBREPOSIÇÃO", "OVERLAY", "SUPERPOSICIÓN"),
                            SS_SETTINGS_OVERLAY, u, ts);
 #else
         (void)loadStateFlashUntil;
@@ -2522,7 +2533,7 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
 
 #ifdef TMC_3DS
     if (page == SS_SETTINGS_RETROACHIEVEMENTS) {
-        const char* const labels[] = { "JOGO", "CONQUISTAS", "ROM" };
+        const char* labels[] = { UiText3("JOGO", "GAME", "JUEGO"), UiText3("CONQUISTAS", "ACHIEVEMENTS", "LOGROS"), "ROM" };
         char achievementCount[32];
         snprintf(achievementCount, sizeof(achievementCount), "%zu DE %zu",
                  Port_RetroAchievements_UnlockedCount(), Port_RetroAchievements_Count());
@@ -2535,11 +2546,11 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
             DrawDiagnosticRow(s, x0, ry, x1, ry + rowH, labels[i], values[i], u, ts);
         }
         DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap,
-                           "VER CONQUISTAS", SS_SETTINGS_RETRO_LIST, u, ts);
+                           UiText3("VER CONQUISTAS", "VIEW ACHIEVEMENTS", "VER LOGROS"), SS_SETTINGS_RETRO_LIST, u, ts);
         DrawDeveloperActionRow(s, tl, x0, y0 + 4 * (rowH + gap), x1, y0 + 5 * rowH + 4 * gap,
-                               "CONTA", Port_RetroAchievements_UserName(), SS_ACT_RETRO_LOGIN, u, ts);
+                               UiText3("CONTA", "ACCOUNT", "CUENTA"), Port_RetroAchievements_UserName(), SS_ACT_RETRO_LOGIN, u, ts);
         DrawDeveloperActionRow(s, tl, x0, y0 + 5 * (rowH + gap), x1, y0 + 6 * rowH + 5 * gap,
-                               "DESCONECTAR", Port_RetroAchievements_StatusText(), SS_ACT_RETRO_LOGOUT, u, ts);
+                               UiText3("DESCONECTAR", "LOG OUT", "DESCONECTAR"), Port_RetroAchievements_StatusText(), SS_ACT_RETRO_LOGOUT, u, ts);
         return;
     }
 
@@ -2566,9 +2577,9 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         char pageLabel[20];
         snprintf(pageLabel, sizeof(pageLabel), "%zu/%zu", currentPage + 1, pages);
         DrawDeveloperActionRow(s, tl, x0, controlsY, middle - 3 * u, controlsY + controlsH,
-                               "ANTERIOR", "", SS_ACT_RETRO_PREV, u, ts);
+                               UiText3("ANTERIOR", "PREVIOUS", "ANTERIOR"), "", SS_ACT_RETRO_PREV, u, ts);
         DrawDeveloperActionRow(s, tl, middle + 3 * u, controlsY, x1, controlsY + controlsH,
-                               "PROXIMA", "", SS_ACT_RETRO_NEXT, u, ts);
+                               UiText3("PRÓXIMA", "NEXT", "SIGUIENTE"), "", SS_ACT_RETRO_NEXT, u, ts);
         MenuTextDraw(s, pageLabel, (int32_t)(middle - MenuTextWidth(pageLabel, (int32_t)(1.2f * u)) * 0.5f),
                      (int32_t)(controlsY + 12 * u), (int32_t)(1.2f * u), SS_TEXT_RED);
         return;
@@ -2671,15 +2682,16 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
     int32_t titleScale = (int32_t)(2.2f * u);
     if (titleScale < 1) titleScale = 1;
     char title[32];
-    snprintf(title, sizeof(title), slot == 0 ? "CARREGAR RAPIDO?" : "CARREGAR SLOT %d?", slot);
+    if (slot == 0) snprintf(title, sizeof(title), "%s", UiText3("CARREGAR RÁPIDO?", "LOAD QUICK STATE?", "¿CARGAR ESTADO RÁPIDO?"));
+    else snprintf(title, sizeof(title), UiText3("CARREGAR SLOT %d?", "LOAD SLOT %d?", "¿CARGAR SLOT %d?"), slot);
     MenuTextCentered(s, title, s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
 
-    static const char* const lines[] = {
-        "O SAVE SELECIONADO VAI",
-        "SUBSTITUIR O ESTADO",
-        "ATUAL DO JOGO.",
-        "PROGRESSO NAO SALVO",
-        "PODE SER PERDIDO.",
+    const char* lines[] = {
+        UiText3("O SAVE SELECIONADO VAI", "THE SELECTED SAVE WILL", "EL SAVE SELECCIONADO"),
+        UiText3("SUBSTITUIR O ESTADO", "REPLACE THE CURRENT", "REEMPLAZARÁ EL ESTADO"),
+        UiText3("ATUAL DO JOGO.", "GAME STATE.", "ACTUAL DEL JUEGO."),
+        UiText3("PROGRESSO NÃO SALVO", "UNSAVED PROGRESS", "EL PROGRESO NO GUARDADO"),
+        UiText3("PODE SER PERDIDO.", "MAY BE LOST.", "PUEDE PERDERSE."),
     };
     int32_t textScale = (int32_t)(1.55f * u);
     if (textScale < 1) textScale = 1;
@@ -2689,9 +2701,9 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
     }
 
     DrawMenuButton(s, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
-                   layout.buttonBottom, "(B) CANCELAR", 0, 0, u, ts);
+                   layout.buttonBottom, UiText3("(B) CANCELAR", "(B) CANCEL", "(B) CANCELAR"), 0, 0, u, ts);
     DrawMenuButton(s, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
-                   layout.buttonBottom, "(A) CARREGAR", 0, 0, u, ts);
+                   layout.buttonBottom, UiText3("(A) CARREGAR", "(A) LOAD", "(A) CARGAR"), 0, 0, u, ts);
     AddTarget(tl, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
               layout.buttonBottom, SS_ACT_LOAD_CANCEL, 0);
     AddTarget(tl, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
@@ -2707,16 +2719,17 @@ static void PaintRandomizerConfirmation(const SSurf* s, TargetList* tl, float u,
 
     int32_t titleScale = (int32_t)(2.2f * u);
     if (titleScale < 1) titleScale = 1;
-    MenuTextCentered(s, enable ? "ENABLE RANDOMIZER" : "DISABLE RANDOMIZER", s->w / 2.0f,
+    MenuTextCentered(s, enable ? UiText3("ATIVAR ALEATORIZADOR", "ENABLE RANDOMIZER", "ACTIVAR ALEATORIZADOR")
+                               : UiText3("DESATIVAR ALEATORIZADOR", "DISABLE RANDOMIZER", "DESACTIVAR ALEATORIZADOR"), s->w / 2.0f,
                      layout.titleY, titleScale, SS_TEXT_NAVY);
 
-    static const char* const lines[] = {
-        "RANDOMIZER REQUIRES A NEW GAME.",
-        "THE ACTIVE PROFILE SAVE,",
-        "AUTOSAVES, SAVESTATES, AND",
-        "RANDOMIZER DATA WILL BE",
-        "DELETED. THE ROM IS KEPT.",
-        "THE GAME WILL RESTART.",
+    const char* lines[] = {
+        UiText3("O ALEATORIZADOR EXIGE NOVO JOGO.", "RANDOMIZER REQUIRES A NEW GAME.", "EL ALEATORIZADOR REQUIERE JUEGO NUEVO."),
+        UiText3("O SAVE DO PERFIL ATIVO,", "THE ACTIVE PROFILE SAVE,", "EL SAVE DEL PERFIL ACTIVO,"),
+        UiText3("AUTOSAVES, SAVE STATES E", "AUTOSAVES, SAVESTATES, AND", "AUTOSAVES, SAVE STATES Y"),
+        UiText3("DADOS DO ALEATORIZADOR SERÃO", "RANDOMIZER DATA WILL BE", "DATOS DEL ALEATORIZADOR SERÁN"),
+        UiText3("APAGADOS. A ROM SERÁ MANTIDA.", "DELETED. THE ROM IS KEPT.", "BORRADOS. LA ROM SE CONSERVA."),
+        UiText3("O JOGO SERÁ REINICIADO.", "THE GAME WILL RESTART.", "EL JUEGO SE REINICIARÁ."),
     };
     int32_t textScale = (int32_t)(1.55f * u);
     if (textScale < 1) textScale = 1;
@@ -2726,9 +2739,9 @@ static void PaintRandomizerConfirmation(const SSurf* s, TargetList* tl, float u,
     }
 
     DrawMenuButton(s, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
-                   layout.buttonBottom, "CANCEL", 0, 0, u, ts);
+                   layout.buttonBottom, UiText3("CANCELAR", "CANCEL", "CANCELAR"), 0, 0, u, ts);
     DrawMenuButton(s, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
-                   layout.buttonBottom, "CONTINUE", 0, 0, u, ts);
+                   layout.buttonBottom, UiText3("CONTINUAR", "CONTINUE", "CONTINUAR"), 0, 0, u, ts);
     AddTarget(tl, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
               layout.buttonBottom, SS_ACT_RANDO_CANCEL, 0);
     AddTarget(tl, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
