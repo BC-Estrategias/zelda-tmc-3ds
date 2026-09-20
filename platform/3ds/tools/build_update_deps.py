@@ -60,7 +60,7 @@ for name in ('curl.tar.xz', 'jansson.tar.gz'):
 '''
             if old_setup not in text:
                 raise SystemExit('curl mbedTLS ssl_setup block not found')
-            text = text.replace(old_setup, '  mbedtls_ssl_init(&backend->ssl);\\n\\n', 1)
+            text = text.replace(old_setup, '  mbedtls_ssl_init(&backend->ssl);\n\n', 1)
             old_rng = '''  mbedtls_ssl_conf_rng(&backend->config, mbedtls_ctr_drbg_random,
                        &backend->ctr_drbg);
   mbedtls_ssl_set_bio(&backend->ssl, cf,
