@@ -121,7 +121,7 @@ SystemControlInfo:
   # from the human-readable 1.0 title string.  Bump it so a 1.0 CIA
   # replaces the older experimental E-series package instead of leaving its
   # suspended-software metadata cached in place.
-  RemasterVersion: 119
+  RemasterVersion: 120
   StackSize: 0x40000
   Dependency:
     ac: 0x0004013000002402
