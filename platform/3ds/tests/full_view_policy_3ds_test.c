@@ -56,8 +56,8 @@ int main(void) {
     inputs.contentHeight = 239;
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
 
-    /* The same combo inside selects a real 200x120 logical viewport. Both
-     * room and painted content must be large enough to feed it. */
+    /* A small interior stays native: zooming a 200x120 camera makes Link
+     * oversized. A large indoor map can use the same real 400x240 camera. */
     inputs = ReadyOutdoor();
     inputs.areaIsExterior = 0;
     inputs.roomWidth = 240;
@@ -89,12 +89,17 @@ int main(void) {
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_LAKE_WOODS_CAVE, 0, AR_IS_MOLE_CAVE));
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_98 + 1, 0, AR_IS_OVERWORLD));
     CHECK(!Port3DSFullViewPolicy_AreaIsExterior(AREA_MINISH_VILLAGE, -1, 0));
-    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_INTERIOR_2X);
-    inputs.contentWidth = 199;
+    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
+    inputs.roomWidth = 432;
+    inputs.roomHeight = 592;
+    inputs.contentWidth = 432;
+    inputs.contentHeight = 592;
+    CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_INTERIOR_1X);
+    inputs.contentWidth = 399;
     CHECK(Port3DSFullViewPolicy_Decide(&inputs, &reason) == PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(reason == PORT_3DS_FULL_VIEW_REASON_INTERIOR_BOUNDS);
-    inputs.contentWidth = 240;
-    inputs.contentHeight = 119;
+    inputs.contentWidth = 432;
+    inputs.contentHeight = 239;
     CHECK(Port3DSFullViewPolicy_Desired(&inputs) == PORT_3DS_FULL_VIEW_FALLBACK);
     inputs.contentHeight = 160;
 
@@ -119,15 +124,15 @@ int main(void) {
 
     /* A new room cannot inherit the previous generation's experimental mode. */
     CHECK(Port3DSFullViewPolicy_Latch(PORT_3DS_FULL_VIEW_OUTDOOR_1X,
-                                     PORT_3DS_FULL_VIEW_INTERIOR_2X, 0, 1) ==
+                                     PORT_3DS_FULL_VIEW_INTERIOR_1X, 0, 1) ==
           PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(Port3DSFullViewPolicy_Latch(PORT_3DS_FULL_VIEW_FALLBACK,
-                                     PORT_3DS_FULL_VIEW_INTERIOR_2X, 1, 0) ==
+                                     PORT_3DS_FULL_VIEW_INTERIOR_1X, 1, 0) ==
           PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(Port3DSFullViewPolicy_Latch(PORT_3DS_FULL_VIEW_FALLBACK,
-                                     PORT_3DS_FULL_VIEW_INTERIOR_2X, 1, 1) ==
-          PORT_3DS_FULL_VIEW_INTERIOR_2X);
-    CHECK(Port3DSFullViewPolicy_Latch(PORT_3DS_FULL_VIEW_INTERIOR_2X,
+                                     PORT_3DS_FULL_VIEW_INTERIOR_1X, 1, 1) ==
+          PORT_3DS_FULL_VIEW_INTERIOR_1X);
+    CHECK(Port3DSFullViewPolicy_Latch(PORT_3DS_FULL_VIEW_INTERIOR_1X,
                                      PORT_3DS_FULL_VIEW_OUTDOOR_1X, 1, 1) ==
           PORT_3DS_FULL_VIEW_OUTDOOR_1X);
 
@@ -150,33 +155,29 @@ int main(void) {
                                                     399, 240, 399, 240, 0, 0, &presentation) ==
           PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(presentation.sourceWidth == 266 && presentation.sourceHeight == 160);
-    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_2X,
-                                                    200, 120, 200, 120, 0, 0, &presentation) ==
-          PORT_3DS_FULL_VIEW_INTERIOR_2X);
+    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_1X,
+                                                    400, 240, 400, 240, 0, 0, &presentation) ==
+          PORT_3DS_FULL_VIEW_INTERIOR_1X);
     CHECK(presentation.sourceX == 0 && presentation.sourceY == 0);
-    CHECK(presentation.sourceWidth == 200 && presentation.sourceHeight == 120);
+    CHECK(presentation.sourceWidth == 400 && presentation.sourceHeight == 240);
     CHECK(presentation.outputWidth == 400 && presentation.outputHeight == 240);
-    /* The old post-composition crop design is deliberately rejected: it
-     * would cut/move HUD and dialogue pixels. */
-    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_2X,
+    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_1X,
                                                     266, 160, 266, 160, 33, 20, &presentation) ==
           PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(presentation.sourceWidth == 266 && presentation.sourceHeight == 160);
-    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_2X,
-                                                    200, 120, 200, 120, 1, 0, &presentation) ==
+    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_1X,
+                                                    400, 240, 400, 240, 1, 0, &presentation) ==
           PORT_3DS_FULL_VIEW_FALLBACK);
-    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_2X,
-                                                    200, 119, 200, 119, 0, 0, &presentation) ==
+    CHECK(Port3DSFullViewPolicy_ResolvePresentation(PORT_3DS_FULL_VIEW_INTERIOR_1X,
+                                                    400, 239, 400, 239, 0, 0, &presentation) ==
           PORT_3DS_FULL_VIEW_FALLBACK);
 
     /* Exact BG0 tile offsets keep right/bottom HUD widgets in each viewport. */
     CHECK(Port3DSFullViewPolicy_HudTilemapOffset(240, 160) == 0);
     CHECK(Port3DSFullViewPolicy_HudTilemapOffset(266, 160) == 0);
     CHECK(Port3DSFullViewPolicy_HudTilemapOffset(400, 240) == 10 * 0x20);
-    CHECK(Port3DSFullViewPolicy_HudTilemapOffset(200, 120) == -5 * 0x20 - 5);
     CHECK(Port3DSFullViewPolicy_ExitLimit(240, 24) == 0x108);
     CHECK(Port3DSFullViewPolicy_ExitLimit(400, 24) == 424);
-    CHECK(Port3DSFullViewPolicy_ExitLimit(120, 40) == 160);
     CHECK(!Port3DSFullViewPolicy_RoomTransitionActive(0, 0, 0, 1));
     CHECK(Port3DSFullViewPolicy_RoomTransitionActive(1, 0, 0, 1));
     CHECK(Port3DSFullViewPolicy_RoomTransitionActive(0, 1, 0, 1));

@@ -36,6 +36,8 @@ static uint32_t PayloadChecksum(const void* data, size_t size) {
     return hash;
 }
 
+static PortDumpStateResult ReadStructuredState(const char* path, int activeRegion, PortDumpStateData* out);
+
 static bool SaveLooksValid(const SaveFile* save) {
     return save != NULL && save->invalid == 0 && save->initialized == 1 && save->msg_speed <= MAX_MSG_SPEED &&
            save->brightness <= MAX_BRIGHTNESS && save->saved_status.area_next <= AREA_98 &&
@@ -78,6 +80,13 @@ bool Port_DumpState_WriteFile(const char* path, int region, const SaveFile* save
     if (fclose(file) != 0)
         ok = false;
     return ok;
+}
+
+PortDumpStateResult Port_DumpState_ReadFile(const char* path, int activeRegion, PortDumpStateData* out) {
+    if (path == NULL || out == NULL || activeRegion < TMC_REGION_USA || activeRegion > TMC_REGION_JP)
+        return PORT_DUMP_STATE_INVALID;
+    memset(out, 0, sizeof(*out));
+    return ReadStructuredState(path, activeRegion, out);
 }
 
 static PortDumpStateResult ReadStructuredState(const char* path, int activeRegion, PortDumpStateData* out) {
@@ -190,7 +199,7 @@ PortDumpStateResult Port_DumpState_ReadLatest(const char* dumpsDirectory, int ac
     if (snprintf(path, sizeof(path), "%s/%s", dumpDirectory, PORT_DUMP_LOAD_STATE_FILENAME) >= (int)sizeof(path))
         return PORT_DUMP_STATE_IO_ERROR;
 
-    result = ReadStructuredState(path, activeRegion, out);
+    result = Port_DumpState_ReadFile(path, activeRegion, out);
     if (result == PORT_DUMP_STATE_NO_STATE)
         result = ReadLegacyState(dumpDirectory, activeRegion, out);
     return result;
@@ -198,13 +207,13 @@ PortDumpStateResult Port_DumpState_ReadLatest(const char* dumpsDirectory, int ac
 
 const char* Port_DumpState_ResultLabel(PortDumpStateResult result) {
     switch (result) {
-        case PORT_DUMP_STATE_OK: return "LOADED";
-        case PORT_DUMP_STATE_OK_LEGACY: return "LEGACY";
-        case PORT_DUMP_STATE_NO_DUMP: return "NO DUMP";
-        case PORT_DUMP_STATE_NO_STATE: return "NO STATE";
-        case PORT_DUMP_STATE_INVALID: return "INVALID";
-        case PORT_DUMP_STATE_WRONG_REGION: return "WRONG ROM";
-        case PORT_DUMP_STATE_IO_ERROR: return "I O ERROR";
+        case PORT_DUMP_STATE_OK: return "CARREGADO";
+        case PORT_DUMP_STATE_OK_LEGACY: return "LEGADO";
+        case PORT_DUMP_STATE_NO_DUMP: return "SEM DUMP";
+        case PORT_DUMP_STATE_NO_STATE: return "SEM SAVE";
+        case PORT_DUMP_STATE_INVALID: return "INVALIDO";
+        case PORT_DUMP_STATE_WRONG_REGION: return "ROM ERRADA";
+        case PORT_DUMP_STATE_IO_ERROR: return "ERRO I O";
     }
-    return "ERROR";
+    return "ERRO";
 }

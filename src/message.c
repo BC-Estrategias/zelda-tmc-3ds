@@ -10,6 +10,7 @@
 #ifdef PC_PORT
 #include <stdio.h>
 #include "../port/port_tts.h"
+#include "../port/port_runtime_config.h"
 #endif
 
 #define MESSAGE_ADVANCE_KEYS (A_BUTTON | B_BUTTON | DPAD_ANY | R_BUTTON)
@@ -435,7 +436,7 @@ u32 MsgInit(void) {
     MemClear((void*)&gTextRender, sizeof(gTextRender));
     MemCopy(&gMessage, &gTextRender, sizeof(gMessage));
     if (gTextRender.message.textSpeed == 99) {
-        gTextRender.message.textSpeed = gSaveHeader->msg_speed;
+        gTextRender.message.textSpeed = Port_Config_GetFastText() ? 2 : gSaveHeader->msg_speed;
     }
     gTextRender._9c = 0xff;
     sub_0805EEB4(&gTextRender.curToken, gTextRender.message.textIndex);

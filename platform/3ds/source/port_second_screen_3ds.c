@@ -9,6 +9,7 @@
 #include "port_second_screen_3ds.h"
 #include "bottom_idle_3ds.h"
 #include "bottom_frame_state_3ds.h"
+#include "port_dump_state_3ds.h"
 
 #include <stdbool.h>
 
@@ -209,6 +210,78 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
     RequestTouchRefresh();
 }
 
+void Port_SecondScreen_3DS_CycleTab(void) {
+    SecondScreenSnapshot currentSnapshot;
+    Port_SecondScreenState_Read(&currentSnapshot);
+    if (!currentSnapshot.inGame) return;
+
+    UI_LOCK();
+    switch (sUi.tab) {
+        case SS_TAB_CHEATS:
+            sUi.tab = SS_TAB_QUEST;
+            break;
+        case SS_TAB_MAP:
+            sUi.tab = SS_TAB_ITEMS;
+            break;
+        case SS_TAB_ITEMS:
+            sUi.tab = SS_TAB_CHEATS;
+            break;
+        case SS_TAB_QUEST:
+            sUi.tab = SS_TAB_MAP;
+            break;
+        default:
+            sUi.tab = SS_TAB_QUEST;
+            break;
+    }
+    sUi.armedRing = 0;
+    sUi.questView = SS_QUEST_MAIN;
+    sUi.settingsPage = SS_SETTINGS_ROOT;
+    UI_UNLOCK();
+    RequestTouchRefresh();
+}
+
+void Port_SecondScreen_3DS_RequestLoadState(void) {
+    SecondScreenSnapshot currentSnapshot;
+    Port_SecondScreenState_Read(&currentSnapshot);
+    if (!currentSnapshot.inGame) return;
+
+    UI_LOCK();
+    sUi.loadSlot = 0;
+    sUi.loadConfirmActive = 1;
+    UI_UNLOCK();
+    RequestTouchRefresh();
+}
+
+int Port_SecondScreen_3DS_LoadConfirmationActive(void) {
+    int active;
+    UI_LOCK();
+    active = sUi.loadConfirmActive != 0;
+    UI_UNLOCK();
+    return active;
+}
+
+void Port_SecondScreen_3DS_CancelLoadState(void) {
+    UI_LOCK();
+    sUi.loadConfirmActive = 0;
+    UI_UNLOCK();
+    RequestTouchRefresh();
+}
+
+void Port_SecondScreen_3DS_ConfirmLoadState(void) {
+    if (!Port_SecondScreen_3DS_LoadConfirmationActive()) return;
+    unsigned slot;
+    UI_LOCK();
+    slot = sUi.loadSlot;
+    UI_UNLOCK();
+    const PortDumpStateResult result = Port_DumpState3DS_LoadSlot(slot);
+    UI_LOCK();
+    sUi.loadConfirmActive = 0;
+    sUi.loadStateResult = (uint8_t)result;
+    sUi.loadStateFlashUntil = sUi.lastTick + 80;
+    UI_UNLOCK();
+    RequestTouchRefresh();
+}
+
 int Port_SecondScreen_3DS_NeedsRefresh(void) {
     return BottomFrameState3DS_NeedsPaint(&sFrameState);
 }
@@ -274,5 +347,5 @@ int Port_SecondScreen_3DS_SnapshotChangeNeedsRefresh(const SecondScreenSnapshot*
     UI_LOCK();
     tab = sUi.tab;
     UI_UNLOCK();
-    return tab != SS_TAB_SETTINGS;
+    return tab != SS_TAB_SETTINGS && tab != SS_TAB_CHEATS;
 }

@@ -1441,6 +1441,18 @@ extern "C" bool32 Port_LoadGfxGroupFromAssets(u32 group) {
         return FALSE;
     }
 
+    /* The extracted USA cache misidentifies the tile payload used by the
+     * library's Huge Book (fixed GFX group 120): it is emitted as a short
+     * generic 56x48 block.  The MacroBook OAM frames address tiles beyond
+     * that block, so accepting the cache makes the book borrow whatever OBJ
+     * tiles happened to be loaded beside it (often a bright green panel).
+     * The active ROM contains the complete, correct payload, therefore keep
+     * it authoritative for this one group until the extractor has a proper
+     * size boundary for Huge Book. */
+    if (group == 120u) {
+        return FALSE;
+    }
+
     const auto it = gAssetGroupCache.gfxGroups.find(group);
     if (it == gAssetGroupCache.gfxGroups.end()) {
         return FALSE;

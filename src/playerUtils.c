@@ -32,6 +32,7 @@
 #include "port_gba_mem.h"
 #include "port_softslots.h"
 #include "port_roll_attack_macro.h"
+#include "port_runtime_config.h"
 #include "port_widescreen.h"
 #include <string.h>
 
@@ -1084,10 +1085,11 @@ bool32 sub_08078008(ChargeState* state) {
 
 bool32 sub_08078070(ChargeState* state) {
     if ((gPlayerState.sword_state & 0x20) != 0) {
+        const u32 multiplier = Port_Config_GetFastSwordCharge() ? 2 : 1;
         if ((gPlayerState.skills & SKILL_FAST_SPLIT) != SKILL_NONE) {
-            state->chargeTimer += 12;
+            state->chargeTimer += 12 * multiplier;
         } else {
-            state->chargeTimer += 6;
+            state->chargeTimer += 6 * multiplier;
         }
         if (state->chargeTimer >= 800) {
             state->chargeTimer = 800;
@@ -3230,6 +3232,21 @@ void PlayerSwimming(Entity* this) {
     } else {
         speed = 0xc0;
     }
+#ifdef PC_PORT
+    /* Keep the Quality-of-Life Link-speed choice consistent in water.
+     * This only raises the normal swimming cruise speed; the game's A-button
+     * swim burst, diving and collision behavior remain untouched. */
+    switch (Port_Config_GetPlayerSpeedMode()) {
+        case 2:
+            speed *= 2;
+            break;
+        case 1:
+            speed = speed * 3 / 2;
+            break;
+        default:
+            break;
+    }
+#endif
     if (speed > this->speed) {
         this->speed = speed;
         this->direction = gPlayerState.direction;

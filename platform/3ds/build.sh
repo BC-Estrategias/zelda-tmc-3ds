@@ -23,6 +23,16 @@ if [[ ! -x "${BANNERTOOL}" && -x "${DEVKITPRO}/tools/bin/bannertool" ]]; then
 fi
 
 export DEVKITPRO
+
+# Keep the small 3DS ABI correction for the pinned rcheevos source reproducible
+# without requiring a fork of the upstream dependency. The test also makes the
+# operation safe to repeat in an existing working tree.
+RCHEEVOS_SOURCE="${ROOT}/third_party/rcheevos/src/rcheevos/rc_validate.c"
+RCHEEVOS_PATCH="${ROOT}/third_party/rcheevos-3ds.patch"
+if [[ -f "${RCHEEVOS_PATCH}" ]] && ! grep -q 'uint32_t\* value' "${RCHEEVOS_SOURCE}"; then
+  git -C "${ROOT}/third_party/rcheevos" apply "${RCHEEVOS_PATCH}"
+fi
+
 cmake -S "${ROOT}/platform/3ds" -B "${BUILD}" \
   -DCMAKE_TOOLCHAIN_FILE="${DEVKITPRO}/cmake/3DS.cmake" \
   -DCMAKE_BUILD_TYPE=Release
@@ -36,7 +46,7 @@ fi
 "${BANNERTOOL}" makesmdh \
   -s "The Minish Cap 3DS v${VERSION}" \
   -l "The Minish Cap 3DS v${VERSION}" \
-  -p "Esteban PDN / Project Picori / samyost1" \
+  -p "Bruno Cruz" \
   -i "${ROOT}/platform/3ds/assets/icon-48.png" \
   -f visible,allow3d,extendedbanner,nosavebackups \
   -o "${BUILD}/tmc-3ds.icn"

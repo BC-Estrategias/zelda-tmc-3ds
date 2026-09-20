@@ -3,6 +3,7 @@
 #include "port_audio.h"
 #include "port_ppu.h"
 #include "port_rom.h"
+#include "port_retroachievements.h"
 #include "port_runtime_config.h"
 
 #include <ctype.h>
@@ -72,15 +73,11 @@ int main(int argc, char** argv) {
     (void)argv;
     if (!Platform3DS_Init()) return 1;
     Platform3DS_ShowSplash();
+    /* The boot splash is intentionally silent.  Route diagnostics to SVC
+     * before ROM/asset code runs so no loader progress leaks onto the lower
+     * screen; Platform3DS_ShowFatal explicitly restores a real console. */
+    Platform3DS_EnterGameplayDisplay();
 
-    printf("The Minish Cap 3DS v" TMC_PORT_VERSION "\n\n");
-    printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
-    printf("Performance: %s\n",
-           Platform3DS_IsNew3DS() ? "New 3DS full presentation"
-                                  : "Old 3DS adaptive presentation skip (max 3)");
-    printf("PPU worker core 1: %u%%\n", Platform3DS_Core1TimeLimit());
-    printf("Extra New 3DS core: %s\n\n", Platform3DS_IsNew3DS() ? "enabled" : "unavailable");
-    printf("Preparing storage...\n");
     if (!PrepareStorage()) {
         Platform3DS_ShowFatal("Storage error", "Could not open " APP_DIR ".");
         Platform3DS_Shutdown();
@@ -118,19 +115,17 @@ int main(int argc, char** argv) {
     }
     fclose(rom);
 
-    printf("Loading ROM and tables...\n");
     Port_Config_Load("tmc3ds.ini");
     Port_LoadRom(romPath);
+    Port_RetroAchievements_IdentifyLoadedRom();
+    Port_RetroAchievements_AutoLogin();
     Port_PPU_Init(NULL);
-    if (!Port_Audio_Init()) {
-        printf("Warning: audio is unavailable.\n");
-    }
+    (void)Port_Audio_Init();
 
-    printf("Starting engine...\n");
-    Platform3DS_EnterGameplayDisplay();
     AgbMain();
 
     Port_PPU_Shutdown();
+    Port_RetroAchievements_Shutdown();
     Platform3DS_Shutdown();
     return 0;
 }

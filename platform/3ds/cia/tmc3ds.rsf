@@ -43,7 +43,9 @@ AccessControlInfo:
   CanShareDeviceMemory: true
   RunnableOnSleep: false
   SpecialMemoryArrange: true
-  SystemModeExt: Legacy
+  # Full View's 400x240 CPU renderer needs the New 3DS resource profile.
+  # This experimental package intentionally does not run on Old 3DS hardware.
+  SystemModeExt: 124MB
   CpuSpeed: 804MHz
   EnableL2Cache: true
   CanAccessCore2: true
@@ -103,11 +105,16 @@ AccessControlInfo:
     - fs:USER
     - gsp::Gpu
     - hid:USER
+    - http:C
     - ptm:u
 
 SystemControlInfo:
   SaveDataSize: 0KB
-  RemasterVersion: 3
+  # This is the install/update revision seen by the 3DS system, distinct
+  # from the human-readable 1.0 title string.  Bump it so a 1.0 CIA
+  # replaces the older experimental E-series package instead of leaving its
+  # suspended-software metadata cached in place.
+  RemasterVersion: 118
   StackSize: 0x40000
   Dependency:
     cfg: 0x0004013000001702

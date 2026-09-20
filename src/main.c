@@ -21,6 +21,7 @@
 #endif
 #ifdef TMC_3DS
 #include "platform_3ds.h"
+#include "port_retroachievements.h"
 #endif
 #include "gba/io_reg.h"
 
@@ -139,6 +140,9 @@ void AgbMain(void) {
                 FadeMain();
 
                 AudioMain();
+#ifdef TMC_3DS
+                Port_RetroAchievements_DoFrame();
+#endif
                 break;
         }
 #ifdef PC_PORT

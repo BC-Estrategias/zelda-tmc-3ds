@@ -1,0 +1,16 @@
+diff --git a/src/rcheevos/rc_validate.c b/src/rcheevos/rc_validate.c
+index 2d55c2f..9b6ce6c 100644
+--- a/src/rcheevos/rc_validate.c
++++ b/src/rcheevos/rc_validate.c
+@@ -919,7 +919,11 @@ static int rc_validate_get_opposite_comparison(int oper)
+   }
+ }
+
+-static const rc_operand_t* rc_validate_get_comparison(const rc_condition_t* condition, int* comparison, unsigned* value)
++/* On 3DS, libctru's uint32_t is an unsigned long while `unsigned` is a
++ * distinct 32-bit type. Use the same fixed-width type as the validation
++ * caller so this otherwise harmless ABI difference cannot become a pointer
++ * type mismatch. */
++static const rc_operand_t* rc_validate_get_comparison(const rc_condition_t* condition, int* comparison, uint32_t* value)
+ {
+   if (rc_operand_is_memref(&condition->operand1))

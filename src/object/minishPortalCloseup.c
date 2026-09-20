@@ -11,6 +11,9 @@
 #include "room.h"
 #include "screen.h"
 #include "fade.h"
+#ifdef PC_PORT
+#include "port_runtime_config.h"
+#endif
 
 typedef struct {
     /*0x00*/ Entity base;
@@ -36,6 +39,15 @@ void MinishPortalCloseup_Init(MinishPortalCloseupEntity* this) {
     super->x.HALF.HI = gArea.portal_x - gRoomControls.scroll_x;
     super->y.HALF.HI = gArea.portal_y - gRoomControls.scroll_y;
     this->unk_68 = 0x80;
+#ifdef PC_PORT
+    /* The close-up is the long purely visual half of a normal portal use.
+     * Start at its final setup threshold when Quick Portal is on; Action1
+     * still loads exactly the original graphics/palette and transitions the
+     * subtask normally. */
+    if (Port_Config_GetFastMinishPortal()) {
+        this->unk_68 = 0x15;
+    }
+#endif
     super->updatePriority = 6;
     sub_0801E1B8(0x1f17, 0);
     sub_0801E1EC(super->x.HALF.HI, super->y.HALF.HI, this->unk_68);
@@ -94,6 +106,11 @@ void MinishPortalCloseup_Action1(MinishPortalCloseupEntity* this) {
         super->spriteRendering.b3 = 0;
         super->spritePriority.b0 = 0;
         super->timer = 30;
+#ifdef PC_PORT
+        if (Port_Config_GetFastMinishPortal()) {
+            super->timer = 1;
+        }
+#endif
         super->subtimer = 255;
         super->spriteRendering.b0 = 3;
         SetAffineInfo(super, 0x100, 0x100, 0);

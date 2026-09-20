@@ -33,32 +33,31 @@ int main(void) {
 
     TopView3DS_BuildPlan(0, 1, TOP_VIEW_3DS_ASPECT_WIDE,
                          TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT,
-                         PORT_3DS_FULL_VIEW_INTERIOR_2X, 200, 120, 200, 120, 0, 0, &plan);
-    CHECK(plan.mode == PORT_3DS_FULL_VIEW_INTERIOR_2X);
+                         PORT_3DS_FULL_VIEW_INTERIOR_1X, 400, 240, 400, 240, 0, 0, &plan);
+    CHECK(plan.mode == PORT_3DS_FULL_VIEW_INTERIOR_1X);
     CHECK(plan.source.sourceX == 0 && plan.source.sourceY == 0);
-    CHECK(plan.source.sourceWidth == 200 && plan.source.sourceHeight == 120);
+    CHECK(plan.source.sourceWidth == 400 && plan.source.sourceHeight == 240);
     CHECK(plan.drawX == 0 && plan.drawY == 0 && plan.drawWidth == 400 && plan.drawHeight == 240);
     CHECK(!plan.linearFilter);
 
-    /* A composed 240/266x160 crop is rejected, as are non-zero source offsets
-     * and undersized logical frames. */
+    /* An undersized interior is rejected rather than zoomed. */
     TopView3DS_BuildPlan(0, 1, TOP_VIEW_3DS_ASPECT_WIDE,
                          TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT,
-                         PORT_3DS_FULL_VIEW_INTERIOR_2X, 266, 160, 266, 160, 33, 20, &plan);
+                         PORT_3DS_FULL_VIEW_INTERIOR_1X, 266, 160, 266, 160, 33, 20, &plan);
     CHECK(plan.mode == PORT_3DS_FULL_VIEW_FALLBACK);
     TopView3DS_BuildPlan(0, 1, TOP_VIEW_3DS_ASPECT_WIDE,
                          TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT,
-                         PORT_3DS_FULL_VIEW_INTERIOR_2X, 200, 120, 200, 120, 1, 0, &plan);
+                         PORT_3DS_FULL_VIEW_INTERIOR_1X, 400, 240, 400, 240, 1, 0, &plan);
     CHECK(plan.mode == PORT_3DS_FULL_VIEW_FALLBACK);
 
     /* Invalid crop, Old hardware and a torn config selection all fail closed
      * before UVs are built. The established E2 width never exceeds 266. */
     TopView3DS_BuildPlan(0, 1, TOP_VIEW_3DS_ASPECT_WIDE,
                          TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT,
-                         PORT_3DS_FULL_VIEW_INTERIOR_2X, 240, 160, 240, 160, 41, 0, &plan);
+                         PORT_3DS_FULL_VIEW_INTERIOR_1X, 240, 160, 240, 160, 41, 0, &plan);
     CHECK(plan.mode == PORT_3DS_FULL_VIEW_FALLBACK);
     CHECK(plan.source.sourceWidth == 240 && plan.source.sourceHeight == 160);
-    CHECK(plan.drawX == 80 && plan.drawY == 40 && plan.drawWidth == 240 && plan.drawHeight == 160);
+    CHECK(plan.drawX == 20 && plan.drawY == 0 && plan.drawWidth == 360 && plan.drawHeight == 240);
     TopView3DS_BuildPlan(1, 1, TOP_VIEW_3DS_ASPECT_WIDE,
                          TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT,
                          PORT_3DS_FULL_VIEW_OUTDOOR_1X, 400, 240, 400, 240, 0, 0, &plan);
@@ -80,10 +79,10 @@ int main(void) {
     CHECK(coherence.forceNativeFrame && coherence.clearFullViewProducer);
     coherence = TopView3DS_ResolvePpuCoherence(PORT_3DS_FULL_VIEW_OUTDOOR_1X, 0);
     CHECK(coherence.forceNativeFrame && !coherence.clearFullViewProducer);
-    coherence = TopView3DS_ResolvePpuCoherence(PORT_3DS_FULL_VIEW_INTERIOR_2X, 0);
+    coherence = TopView3DS_ResolvePpuCoherence(PORT_3DS_FULL_VIEW_INTERIOR_1X, 0);
+    CHECK(coherence.forceNativeFrame && !coherence.clearFullViewProducer);
+    coherence = TopView3DS_ResolvePpuCoherence(PORT_3DS_FULL_VIEW_INTERIOR_1X, 1);
     CHECK(!coherence.forceNativeFrame && !coherence.clearFullViewProducer);
-    coherence = TopView3DS_ResolvePpuCoherence(PORT_3DS_FULL_VIEW_INTERIOR_2X, 1);
-    CHECK(coherence.forceNativeFrame && coherence.clearFullViewProducer);
 
     /* Native 240, Wide 266, Original 360 and Stretch 400 remain the physical
      * geometry decisions. Blur is directly linear-filtered, Bilinear requests

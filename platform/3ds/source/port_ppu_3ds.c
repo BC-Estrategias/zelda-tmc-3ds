@@ -4,10 +4,12 @@
 #include "port_config.h"
 #include "port_collision_diagnostics.h"
 #include "port_dump_state_3ds.h"
+#include "port/port_room_transition_profile.h"
 #include "port_hdma.h"
 #include "port_runtime_config.h"
 #include "port_audio_3ds.h"
 #include "port_save.h"
+#include "port_rom.h"
 #include "port_second_screen.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_state.h"
@@ -17,7 +19,11 @@
 #include "top_view_3ds.h"
 
 #include "virtuappu.h"
+#include "area.h"
 #include "cpu/mode1.h"
+#include "entity.h"
+#include "flags.h"
+#include "kinstone.h"
 #include "main.h"
 #include "map.h"
 #include "menu.h"
@@ -82,6 +88,13 @@ static uint64_t sPerfIntervalMaxTicks;
 static uint64_t sPerfIntervalSamples;
 static uint64_t sPerfFramesOver16ms;
 static uint64_t sPerfFramesOver33ms;
+static uint64_t sPerfFullViewRenderTicks;
+static uint64_t sPerfFullViewTopTicks;
+static uint64_t sPerfFullViewTotalTicks;
+static uint64_t sPerfFullViewRenderMaxTicks;
+static uint64_t sPerfFullViewTopMaxTicks;
+static uint64_t sPerfFullViewTotalMaxTicks;
+static uint64_t sPerfFullViewSamples;
 static volatile uint32_t sCurrentFpsX100;
 static volatile uint32_t sAverageFpsX100;
 static int sTopPresentWidth = GBA_NATIVE_W;
@@ -139,27 +152,14 @@ static TopFrameState SelectTopFrame(void) {
         .fallbackReason = Port_Widescreen_3DSFallbackReason(),
     };
     const Port3DSFullViewMode requested = Port_Widescreen_3DSViewMode();
-    if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
+    if ((requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+         requested == PORT_3DS_FULL_VIEW_INTERIOR_1X) &&
         MODE1_GBA_WIDTH >= 400 && MODE1_GBA_HEIGHT >= 240 &&
         Port_Widescreen_ShadowsLive()) {
         state.width = 400;
         state.height = 240;
         state.validSourceWidth = 400;
         state.validSourceHeight = 240;
-        state.mode = requested;
-        state.fallbackReason = PORT_3DS_FULL_VIEW_REASON_NONE;
-        return state;
-    }
-
-    if (requested == PORT_3DS_FULL_VIEW_INTERIOR_2X &&
-        Port_Widescreen_ShadowsLive()) {
-        /* Interior zoom is a real logical viewport. Rendering 200x120 keeps
-         * BG0/OAM composition coherent; cropping a finished E2 frame would
-         * remove hearts, keys, rupees and dialogue pixels. */
-        state.width = 200;
-        state.height = 120;
-        state.validSourceWidth = 200;
-        state.validSourceHeight = 120;
         state.mode = requested;
         state.fallbackReason = PORT_3DS_FULL_VIEW_REASON_NONE;
         return state;
@@ -244,6 +244,141 @@ static double TicksToMilliseconds(uint64_t ticks) {
     return (double)ticks * 1000.0 / (double)Platform3DS_TicksPerSecond();
 }
 
+/* The save's fusedKinstones bitfield is deliberately an internal game
+ * identity, not the ordinal used by fan guides.  Resolve it through the
+ * active ROM's own fuser tables when a quick dump is requested, so a report
+ * names the actual room and NPC/enemy record the player can visit. */
+typedef struct {
+    bool found;
+    uint8_t fuserId;
+    uint8_t area;
+    uint8_t room;
+    uint8_t kind;
+    uint8_t id;
+    uint8_t type;
+    uint32_t type2;
+    uint16_t x;
+    uint16_t y;
+    uint8_t offer;
+    bool active;
+} PendingFuserLocation;
+
+static uint8_t FindPendingFuserOffer(uint32_t fuserId, bool* active) {
+    const uint8_t* data;
+    uint32_t progress;
+    uint8_t offer;
+
+    if (active != NULL) *active = false;
+    if (gRomData == NULL || gRomOffsets == NULL || fuserId >= PORT_FUSER_TABLE_COUNT) return 0;
+
+    offer = gSave.kinstones.fuserOffers[fuserId];
+    if (offer >= 1u && offer <= 100u && !ReadBit(gSave.kinstones.fusedKinstones, offer)) {
+        if (active != NULL) *active = true;
+        return offer;
+    }
+
+    data = Port_ResolveFuserDataFromRom(gRomData, gRomSize, gRomOffsets->fuserFusionPtrs, fuserId,
+                                        PORT_FUSER_FUSION_RECORD_BYTES);
+    progress = gSave.kinstones.fuserProgress[fuserId];
+    if (data == NULL || progress > PORT_FUSER_FUSION_MAX_OFFERS) return 0;
+
+    /* This is the same ordered list the game uses after a conversation. Do
+     * not fabricate a destination for RANDOM shared fusions (0xFF). */
+    for (; progress < PORT_FUSER_FUSION_MAX_OFFERS; ++progress) {
+        offer = data[5u + progress];
+        if (offer == KINSTONE_NONE || offer == KINSTONE_RANDOM) break;
+        if (offer >= 1u && offer <= 100u && !ReadBit(gSave.kinstones.fusedKinstones, offer)) {
+            return offer;
+        }
+    }
+    return 0;
+}
+
+static void WritePendingKinstoneFusions(FILE* info) {
+    PendingFuserLocation locations[PORT_FUSER_TABLE_COUNT];
+    bool reported[PORT_FUSER_TABLE_COUNT];
+    bool locatedOffers[101];
+    unsigned missingCount = 0;
+    unsigned locationCount = 0;
+
+    memset(locations, 0, sizeof(locations));
+    memset(reported, 0, sizeof(reported));
+    memset(locatedOffers, 0, sizeof(locatedOffers));
+
+    for (uint32_t fusion = 1; fusion <= 100; ++fusion) {
+        if (!ReadBit(gSave.kinstones.fusedKinstones, fusion)) missingCount++;
+    }
+
+    if (gRomData != NULL && gRomOffsets != NULL && gAreaRoomHeaders != NULL) {
+        /* gAreaRoomHeaders is the 153-entry retail area table. */
+        for (uint32_t area = 0; area < 153u; ++area) {
+            const RoomHeader* headers = gAreaRoomHeaders[area];
+            if (headers == NULL) continue;
+            for (uint32_t room = 0; room < MAX_ROOMS && headers[room].map_x != 0xffffu; ++room) {
+                for (uint32_t property = 0; property <= 1; ++property) {
+                    const EntityData* entities = (const EntityData*)GetRoomProperty(area, room, property);
+                    for (uint32_t n = 0; entities != NULL && n < 192u && entities[n].kind != 0xffu; ++n) {
+                        const EntityData* entity = &entities[n];
+                        uint32_t tableOffset;
+                        uint64_t fuserData;
+                        uint32_t fuserId;
+                        bool active;
+                        uint8_t offer;
+
+                        if (entity->kind == ENEMY) {
+                            tableOffset = gRomOffsets->fuserEnemyData;
+                        } else if (entity->kind == NPC) {
+                            tableOffset = gRomOffsets->fuserNpcData;
+                        } else {
+                            continue;
+                        }
+                        fuserData = Port_FindEntityFuserDataFromRom(gRomData, gRomSize, tableOffset, entity->id,
+                                                                    entity->type, (uint8_t)entity->type2);
+                        fuserId = (uint32_t)fuserData;
+                        if (fuserData == 0 || fuserId >= PORT_FUSER_TABLE_COUNT || reported[fuserId]) continue;
+
+                        offer = FindPendingFuserOffer(fuserId, &active);
+                        if (offer == 0) continue;
+
+                        locations[locationCount].found = true;
+                        locations[locationCount].fuserId = (uint8_t)fuserId;
+                        locations[locationCount].area = (uint8_t)area;
+                        locations[locationCount].room = (uint8_t)room;
+                        locations[locationCount].kind = entity->kind;
+                        locations[locationCount].id = entity->id;
+                        locations[locationCount].type = entity->type;
+                        locations[locationCount].type2 = entity->type2;
+                        locations[locationCount].x = headers[room].map_x + entity->xPos;
+                        locations[locationCount].y = headers[room].map_y + entity->yPos;
+                        locations[locationCount].offer = offer;
+                        locations[locationCount].active = active;
+                        reported[fuserId] = true;
+                        locatedOffers[offer] = true;
+                        ++locationCount;
+                    }
+                }
+            }
+        }
+    }
+
+    fprintf(info, "\n[Pending Kinstone fusions]\n");
+    fprintf(info, "Missing internal fusion flags: %u\n", missingCount);
+    fprintf(info, "Locations are resolved from the loaded ROM; IDs are not guide numbers.\n");
+    for (unsigned i = 0; i < locationCount; ++i) {
+        const PendingFuserLocation* location = &locations[i];
+        fprintf(info,
+                "  fusion=%u: %s fuser=%u area=0x%02X room=0x%02X world=%u,%u entity=%u/%u/%lu (%s)\n",
+                location->offer, location->kind == NPC ? "NPC" : "enemy", location->fuserId, location->area, location->room,
+                location->x, location->y, location->id, location->type, (unsigned long)location->type2,
+                location->active ? "ready now" : "next fixed offer");
+    }
+    for (uint32_t fusion = 1; fusion <= 100; ++fusion) {
+        if (!ReadBit(gSave.kinstones.fusedKinstones, fusion) && !locatedOffers[fusion]) {
+            fprintf(info, "  fusion=%u: no static fuser location (may be a random/shared or scripted offer)\n", fusion);
+        }
+    }
+}
+
 void Port_PPU_3DS_WriteQuickDump(void) {
     if (!sInitialized) return;
     /* This synchronous SD capture and its confirmation overlay intentionally
@@ -324,6 +459,7 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         BottomFrameState3DSStats bottomFrameStats;
         PortAudio3DSStats audioStats;
         PortSaveStats saveStats;
+        PortRoomTransitionProfile roomProfile;
         PortPlayerDamageDiagnostic damageDiagnostic;
         VirtuaPPUMode13DSStats workerStats;
         Platform3DS_GetRuntimeStats(&runtimeStats);
@@ -331,6 +467,7 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         Port_SecondScreen_3DS_GetFrameStats(&bottomFrameStats);
         Port_Audio_3DSGetStats(&audioStats);
         Port_Save_GetStats(&saveStats);
+        Port_RoomTransitionProfile_Get(&roomProfile);
         Port_Collision_GetLastPlayerDamage(&damageDiagnostic);
         virtuappu_mode1_get_3ds_stats(&workerStats);
         const uint64_t engineSamples = runtimeStats.logicFrames > 1 ? runtimeStats.logicFrames - 1u : 1u;
@@ -395,6 +532,11 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         fprintf(info, "C-stick: %d, %d\n", runtimeStats.cstickX, runtimeStats.cstickY);
         fprintf(info, "Turbo: %s, multiplier x%u\n",
                 runtimeStats.turboHeld ? "held" : "released", Platform3DS_TurboMultiplier());
+        fprintf(info, "Last room-load profile: area/room 0x%02X/0x%02X; total %.3f ms; gfx %.3f; init %.3f; entities %.3f; map VRAM %.3f; samples %lu\n",
+                roomProfile.area, roomProfile.room, TicksToMilliseconds(roomProfile.totalTicks),
+                TicksToMilliseconds(roomProfile.gfxTicks), TicksToMilliseconds(roomProfile.roomInitTicks),
+                TicksToMilliseconds(roomProfile.entityTicks), TicksToMilliseconds(roomProfile.mapVramTicks),
+                (unsigned long)roomProfile.completedTransitions);
 
         fprintf(info, "\n[Cadence]\n");
         fprintf(info, "Engine logic frames: %llu\n", (unsigned long long)runtimeStats.logicFrames);
@@ -452,6 +594,17 @@ void Port_PPU_3DS_WriteQuickDump(void) {
                 TicksToMilliseconds(sPerfBottomMaxTicks));
         fprintf(info, "Main-thread render/presentation CPU work: average %.3f ms, maximum %.3f ms\n",
                 TicksToMilliseconds(sPerfTotalTicks) / sampleCount, TicksToMilliseconds(sPerfTotalMaxTicks));
+        if (sPerfFullViewSamples != 0) {
+            const double fullSamples = (double)sPerfFullViewSamples;
+            fprintf(info, "Full View only (samples %llu): PPU %.3f/%.3f ms; top %.3f/%.3f ms; total %.3f/%.3f ms\n",
+                    (unsigned long long)sPerfFullViewSamples,
+                    TicksToMilliseconds(sPerfFullViewRenderTicks) / fullSamples,
+                    TicksToMilliseconds(sPerfFullViewRenderMaxTicks),
+                    TicksToMilliseconds(sPerfFullViewTopTicks) / fullSamples,
+                    TicksToMilliseconds(sPerfFullViewTopMaxTicks),
+                    TicksToMilliseconds(sPerfFullViewTotalTicks) / fullSamples,
+                    TicksToMilliseconds(sPerfFullViewTotalMaxTicks));
+        }
         fprintf(info, "PPU core 0: last %.3f ms, maximum %.3f ms, last lines %lu\n",
                 TicksToMilliseconds(workerStats.mainLastTicks), TicksToMilliseconds(workerStats.mainMaxTicks),
                 (unsigned long)workerStats.mainLastLines);
@@ -465,12 +618,12 @@ void Port_PPU_3DS_WriteQuickDump(void) {
             fprintf(info, "PPU core %d measured load in last frame interval: %.1f%%\n", i + 1,
                     (double)workerStats.workerLastTicks[i] * 100.0 / loadIntervalTicks);
         }
-        fprintf(info, "Old 3DS PPU paths last frame (direct/field-alpha/compact/fallback): %lu/%lu/%lu/%lu lines\n",
+        fprintf(info, "PPU paths last frame (direct/field-alpha/compact/fallback): %lu/%lu/%lu/%lu lines\n",
                 (unsigned long)workerStats.oldPathLastLines[MODE1_OLD_PATH_DIRECT],
                 (unsigned long)workerStats.oldPathLastLines[MODE1_OLD_PATH_FIELD_ALPHA],
                 (unsigned long)workerStats.oldPathLastLines[MODE1_OLD_PATH_COMPACT],
                 (unsigned long)workerStats.oldPathLastLines[MODE1_OLD_PATH_FALLBACK]);
-        fprintf(info, "Old 3DS PPU paths cumulative (direct/field-alpha/compact/fallback): %llu/%llu/%llu/%llu lines\n",
+        fprintf(info, "PPU paths cumulative (direct/field-alpha/compact/fallback): %llu/%llu/%llu/%llu lines\n",
                 (unsigned long long)workerStats.oldPathTotalLines[MODE1_OLD_PATH_DIRECT],
                 (unsigned long long)workerStats.oldPathTotalLines[MODE1_OLD_PATH_FIELD_ALPHA],
                 (unsigned long long)workerStats.oldPathTotalLines[MODE1_OLD_PATH_COMPACT],
@@ -590,6 +743,45 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         fprintf(info, "Player control/framestate/layer/draw/flags: %u/%u/%u/%u/0x%02X\n",
                 gPlayerState.controlMode, gPlayerState.framestate, gPlayerEntity.base.collisionLayer,
                 gPlayerEntity.base.spriteSettings.draw, gPlayerEntity.base.flags);
+        {
+            const Entity* player = &gPlayerEntity.base;
+            const uint8_t compositeSlot = player->spriteAnimation[2];
+            fprintf(info,
+                    "Player sprite: index=%u frame=%u VRAM=0x%04X palette=%u composite-slot=%u "
+                    "animation=%u/%u/%u\n",
+                    player->spriteIndex, player->frameIndex, player->spriteVramOffset,
+                    player->palette.raw, compositeSlot, player->spriteAnimation[0],
+                    player->spriteAnimation[1], player->spriteAnimation[2]);
+            if (compositeSlot != 0 && compositeSlot < ARRAY_COUNT(gUnk_020000C0)) {
+                const struct_gUnk_020000C0* composite = &gUnk_020000C0[compositeSlot];
+                fprintf(info, "Player composite parts (active: flags/sprite/frame/palette/tile/x/y):\n");
+                for (unsigned part = 0; part < ARRAY_COUNT(composite->unk_00); ++part) {
+                    const struct_gUnk_020000C0_1* sub = &composite->unk_00[part];
+                    const uint8_t flags = *(const uint8_t*)&sub->unk_00;
+                    const uint32_t data = sub->unk_04.WORD;
+                    if ((flags & 3u) == 3u && sub->unk_0C != NULL) {
+                        /* Link's composite slots normally point at helper
+                         * entities (body, head, carried/equipped layers),
+                         * rather than storing their frames inline. */
+                        const Entity* child = (const Entity*)sub->unk_0C;
+                        fprintf(info,
+                                "  %u: subentity 0x%02X/index=%u frame=%u VRAM=0x%04X palette=%u "
+                                "animation=%u/%u/%u offset=%d/%d\n",
+                                part, flags, child->spriteIndex, child->frameIndex,
+                                child->spriteVramOffset, child->palette.raw,
+                                child->spriteAnimation[0], child->spriteAnimation[1],
+                                child->spriteAnimation[2], (int8_t)((data >> 16) & 0xFFu),
+                                (int8_t)((data >> 24) & 0xFFu));
+                    } else {
+                        fprintf(info, "  %u: %s 0x%02X/0x%04X/%u/%u/%u/%d/%d\n", part,
+                                (flags & 1u) ? "active" : "inactive", flags, sub->unk_02,
+                                sub->unk_01, (unsigned)((data >> 8) & 0xFFu),
+                                (unsigned)(sub->unk_08.WORD & 0xFFu),
+                                (int8_t)((data >> 16) & 0xFFu), (int8_t)((data >> 24) & 0xFFu));
+                    }
+                }
+            }
+        }
         fprintf(info, "\n[Last player collision damage]\n");
         if (!damageDiagnostic.valid) {
             fprintf(info, "Recorded: no\n");
@@ -648,15 +840,54 @@ void Port_PPU_3DS_WriteQuickDump(void) {
         fprintf(info, "Full View active/mode: %s / %s\n",
                 sTopPresentMode != PORT_3DS_FULL_VIEW_FALLBACK ? "yes" : "no",
                 sTopPresentMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? "outdoor-400x240-1x"
-                : sTopPresentMode == PORT_3DS_FULL_VIEW_INTERIOR_2X ? "interior-200x120-nearest-2x"
+                : sTopPresentMode == PORT_3DS_FULL_VIEW_INTERIOR_1X ? "interior-400x240-1x"
                                                                   : "E2-fallback");
         fprintf(info, "Top render geometry/capacity: %dx%d / %dx%d; crop origin: %d,%d\n",
                 sTopPresentWidth, sTopPresentHeight, MODE1_GBA_WIDTH, MODE1_GBA_HEIGHT,
                 sTopCropX, sTopCropY);
         fprintf(info, "Full View fallback reason: %s\n",
                 Port3DSFullViewPolicy_FallbackReasonName(sTopFallbackReason));
-        fprintf(info, "BG3 native HDMA bounds: %s\n",
-                virtuappu_mode1_bg3_hdma_native_bounds ? "enabled" : "disabled");
+        fprintf(info, "BG3 HDMA overlay projection: %s\n",
+                virtuappu_mode1_bg3_hdma_native_bounds ? "scaled-400x240" : "inactive");
+        {
+            PortWidescreenModeEvent modeEvents[PORT_WIDESCREEN_MODE_EVENT_COUNT];
+            const unsigned modeEventCount = Port_Widescreen_GetModeEvents(
+                modeEvents, PORT_WIDESCREEN_MODE_EVENT_COUNT);
+            fprintf(info, "Full View mode history (oldest -> newest): %u event(s)\n", modeEventCount);
+            for (unsigned i = 0; i < modeEventCount; ++i) {
+                const PortWidescreenModeEvent* event = &modeEvents[i];
+                const char* modeName = event->mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? "outdoor-400x240"
+                    : event->mode == PORT_3DS_FULL_VIEW_INTERIOR_1X ? "interior-400x240"
+                                                                         : "native-240x160";
+                fprintf(info,
+                        "  frame=%lu room=0x%02X/0x%02X mode=%s fade=%u transition=%u reload=%u scroll=%u overlay=%u\n",
+                        (unsigned long)event->frame, event->area, event->room, modeName,
+                        event->fadeActive, event->transitionActive, event->reloadFlags,
+                        event->scrollAction, event->uiOverlay);
+            }
+        }
+
+        {
+            PortHeartMapReportEntry hearts[SECOND_SCREEN_HEART_MARKERS];
+            const unsigned heartCount = Port_SecondScreenState_GetMissingHeartPieces(
+                hearts, SECOND_SCREEN_HEART_MARKERS);
+            fprintf(info, "\n[Missing heart pieces]\n");
+            fprintf(info, "Count: %u\n", heartCount);
+            for (unsigned i = 0; i < heartCount && i < SECOND_SCREEN_HEART_MARKERS; ++i) {
+                const PortHeartMapReportEntry* heart = &hearts[i];
+                const char* checkType = ((heart->flag >> 14) & 3u) == 0 ? "local"
+                                      : ((heart->flag >> 14) & 3u) == 1 ? "global"
+                                                                          : "unsupported";
+                fprintf(info, "  %02u: %s; area=0x%02X", i + 1,
+                        heart->name != NULL ? heart->name : "Unnamed heart piece", heart->area);
+                if (heart->source == 2) {
+                    fprintf(info, " world=%d,%d", heart->x, heart->y);
+                }
+                fprintf(info, " flag=0x%04X (%s)\n", heart->flag, checkType);
+            }
+        }
+
+        WritePendingKinstoneFusions(info);
 
         fprintf(info, "\n[Files]\n");
         fprintf(info, "top-screen.bmp, bottom-screen.bmp, top-screen.raw, bottom-screen.raw\n");
@@ -781,6 +1012,8 @@ void Port_PPU_PresentFrame(void) {
             virtuappu_mode1_ws_full_view = 0;
         }
     }
+    const bool fullViewFrame = topFrame.mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+                               topFrame.mode == PORT_3DS_FULL_VIEW_INTERIOR_1X;
     virtuappu_registers.mode = (mode == 1 || mode == 2) ? 2 : 1;
     sTopPresentWidth = topFrame.width;
     sTopPresentHeight = topFrame.height;
@@ -925,6 +1158,15 @@ void Port_PPU_PresentFrame(void) {
         if (renderTicks > sPerfRenderMaxTicks) sPerfRenderMaxTicks = renderTicks;
         if (topTicks > sPerfTopMaxTicks) sPerfTopMaxTicks = topTicks;
         if (totalTicks > sPerfTotalMaxTicks) sPerfTotalMaxTicks = totalTicks;
+        if (fullViewFrame) {
+            ++sPerfFullViewSamples;
+            sPerfFullViewRenderTicks += renderTicks;
+            sPerfFullViewTopTicks += topTicks;
+            sPerfFullViewTotalTicks += totalTicks;
+            if (renderTicks > sPerfFullViewRenderMaxTicks) sPerfFullViewRenderMaxTicks = renderTicks;
+            if (topTicks > sPerfFullViewTopMaxTicks) sPerfFullViewTopMaxTicks = topTicks;
+            if (totalTicks > sPerfFullViewTotalMaxTicks) sPerfFullViewTotalMaxTicks = totalTicks;
+        }
         if (sPerfIntervalTicks != 0) {
             uint64_t average = Platform3DS_TicksPerSecond() * sPerfIntervalSamples * 100u / sPerfIntervalTicks;
             __atomic_store_n(&sAverageFpsX100, (uint32_t)average, __ATOMIC_RELAXED);

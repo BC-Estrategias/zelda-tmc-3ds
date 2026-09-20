@@ -1,9 +1,6 @@
-[submodule "libs/VirtuaAPU"]
-	path = libs/VirtuaAPU
-	url = https://github.com/MatheoVignaud/VirtuaAPU.git
-[submodule "libs/tmc-Android-Experimental"]
-	path = libs/tmc-Android-Experimental
-	url = https://github.com/MatheoVignaud/tmc-Android-Experimental.git
-[submodule "libs/tmc-Modern-Launcher"]
-	path = libs/tmc-Modern-Launcher
-	url = https://github.com/MatheoVignaud/tmc-Modern-Launcher.git
+[submodule "third_party/mbedtls"]
+	path = third_party/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "third_party/rcheevos"]
+	path = third_party/rcheevos
+	url = https://github.com/RetroAchievements/rcheevos.git

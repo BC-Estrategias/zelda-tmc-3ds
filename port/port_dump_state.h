@@ -28,6 +28,9 @@ typedef struct PortDumpStateData {
 } PortDumpStateData;
 
 bool Port_DumpState_WriteFile(const char* path, int region, const SaveFile* save);
+/* Read one explicit validated state file. Platforms use this for named slots;
+ * the directory-scanning helper below remains for diagnostic dumps. */
+PortDumpStateResult Port_DumpState_ReadFile(const char* path, int activeRegion, PortDumpStateData* out);
 PortDumpStateResult Port_DumpState_ReadLatest(const char* dumpsDirectory, int activeRegion,
                                               PortDumpStateData* out);
 const char* Port_DumpState_ResultLabel(PortDumpStateResult result);

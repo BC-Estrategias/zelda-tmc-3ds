@@ -40,6 +40,7 @@
 #endif
 
 #include "port_3ds_full_view_policy.h"
+#include <stdint.h>
 
 /* Compile-time render capacity. Runtime gameplay remains 160 lines except
  * for the latched New 3DS outdoor 1:1 view. */
@@ -93,6 +94,25 @@ int Port_Widescreen_ShadowsLive(void);
  * can center the complete two-row banner instead of applying the HUD's
  * right-edge remap through its middle. */
 void Port_Widescreen_SetEnterRoomBannerActive(int active);
+
+/* Compact diagnostic history of the final presentation mode of recent
+ * frames.  It intentionally excludes the provisional E2 publication used
+ * while a frame is being built, so a dump records only mode changes that the
+ * 3DS presenter could actually display. */
+#define PORT_WIDESCREEN_MODE_EVENT_COUNT 12
+typedef struct {
+    uint32_t frame;
+    uint8_t area;
+    uint8_t room;
+    uint8_t mode;
+    uint8_t fadeActive;
+    uint8_t transitionActive;
+    uint8_t reloadFlags;
+    uint8_t scrollAction;
+    uint8_t uiOverlay;
+} PortWidescreenModeEvent;
+
+unsigned Port_Widescreen_GetModeEvents(PortWidescreenModeEvent* events, unsigned capacity);
 
 /* True widescreen: the view width tracks the WINDOW's aspect each frame —
  * viewW = clamp(floor(window_width * 160 / window_height), 240,

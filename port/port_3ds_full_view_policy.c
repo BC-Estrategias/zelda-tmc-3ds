@@ -5,8 +5,6 @@
 enum {
     PORT_3DS_FULL_VIEW_WIDTH = 400,
     PORT_3DS_FULL_VIEW_HEIGHT = 240,
-    PORT_3DS_INTERIOR_CROP_WIDTH = 200,
-    PORT_3DS_INTERIOR_CROP_HEIGHT = 120,
     PORT_3DS_EXISTING_WIDE_MAX = 266,
 };
 
@@ -83,15 +81,18 @@ Port3DSFullViewMode Port3DSFullViewPolicy_Decide(const Port3DSFullViewInputs* in
         return PORT_3DS_FULL_VIEW_OUTDOOR_1X;
     }
 
-    if (inputs->roomWidth < PORT_3DS_INTERIOR_CROP_WIDTH ||
-        inputs->roomHeight < PORT_3DS_INTERIOR_CROP_HEIGHT ||
-        inputs->contentWidth < PORT_3DS_INTERIOR_CROP_WIDTH ||
-        inputs->contentHeight < PORT_3DS_INTERIOR_CROP_HEIGHT) {
+    /* Do not turn a 240x160 house into a 200x120 camera scaled by two: that
+     * makes Link and all sprites oversized. An interior earns Full View only
+     * when its real, painted map can feed the full 400x240 viewport. */
+    if (inputs->roomWidth < PORT_3DS_FULL_VIEW_WIDTH ||
+        inputs->roomHeight < PORT_3DS_FULL_VIEW_HEIGHT ||
+        inputs->contentWidth < PORT_3DS_FULL_VIEW_WIDTH ||
+        inputs->contentHeight < PORT_3DS_FULL_VIEW_HEIGHT) {
         if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_INTERIOR_BOUNDS;
         return PORT_3DS_FULL_VIEW_FALLBACK;
     }
     if (reason != 0) *reason = PORT_3DS_FULL_VIEW_REASON_NONE;
-    return PORT_3DS_FULL_VIEW_INTERIOR_2X;
+    return PORT_3DS_FULL_VIEW_INTERIOR_1X;
 }
 
 Port3DSFullViewMode Port3DSFullViewPolicy_Desired(const Port3DSFullViewInputs* inputs) {
@@ -117,7 +118,7 @@ Port3DSFullViewMode Port3DSFullViewPolicy_Latch(Port3DSFullViewMode previous,
         return PORT_3DS_FULL_VIEW_FALLBACK;
     }
     if (desired != PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
-        desired != PORT_3DS_FULL_VIEW_INTERIOR_2X) {
+        desired != PORT_3DS_FULL_VIEW_INTERIOR_1X) {
         return PORT_3DS_FULL_VIEW_FALLBACK;
     }
     return desired;
@@ -140,32 +141,15 @@ Port3DSFullViewMode Port3DSFullViewPolicy_ResolvePresentation(
     resolved.outputWidth = fallbackWidth;
     resolved.outputHeight = PORT_3DS_FULL_VIEW_HEIGHT * 2 / 3;
 
-    if (requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X &&
+    if ((requested == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+         requested == PORT_3DS_FULL_VIEW_INTERIOR_1X) &&
         renderWidth == PORT_3DS_FULL_VIEW_WIDTH && renderHeight == PORT_3DS_FULL_VIEW_HEIGHT &&
         validSourceWidth >= PORT_3DS_FULL_VIEW_WIDTH &&
-        validSourceHeight >= PORT_3DS_FULL_VIEW_HEIGHT) {
+        validSourceHeight >= PORT_3DS_FULL_VIEW_HEIGHT && cropX == 0 && cropY == 0) {
         resolved.renderWidth = renderWidth;
         resolved.renderHeight = renderHeight;
         resolved.sourceWidth = PORT_3DS_FULL_VIEW_WIDTH;
         resolved.sourceHeight = PORT_3DS_FULL_VIEW_HEIGHT;
-        resolved.outputWidth = PORT_3DS_FULL_VIEW_WIDTH;
-        resolved.outputHeight = PORT_3DS_FULL_VIEW_HEIGHT;
-        if (presentation != 0) *presentation = resolved;
-        return requested;
-    }
-
-    if (requested == PORT_3DS_FULL_VIEW_INTERIOR_2X &&
-        renderWidth == PORT_3DS_INTERIOR_CROP_WIDTH &&
-        renderHeight == PORT_3DS_INTERIOR_CROP_HEIGHT &&
-        validSourceWidth == PORT_3DS_INTERIOR_CROP_WIDTH &&
-        validSourceHeight == PORT_3DS_INTERIOR_CROP_HEIGHT &&
-        cropX == 0 && cropY == 0) {
-        resolved.renderWidth = renderWidth;
-        resolved.renderHeight = renderHeight;
-        resolved.sourceX = cropX;
-        resolved.sourceY = cropY;
-        resolved.sourceWidth = PORT_3DS_INTERIOR_CROP_WIDTH;
-        resolved.sourceHeight = PORT_3DS_INTERIOR_CROP_HEIGHT;
         resolved.outputWidth = PORT_3DS_FULL_VIEW_WIDTH;
         resolved.outputHeight = PORT_3DS_FULL_VIEW_HEIGHT;
         if (presentation != 0) *presentation = resolved;

@@ -20,6 +20,7 @@
 #include "script.h"
 #include "subtask.h"
 #include "tiles.h"
+#include "port_runtime_config.h"
 #ifdef PC_PORT
 #include "rando/rando_keymap.h"
 extern bool Rando_OverrideLocationKey(u32 location_key, u8* type, u8* subtype);
@@ -63,6 +64,7 @@ void FigurineDevice_ChangeShellAmount(FigurineDeviceEntity*, s32);
 void FigurineDevice_PlayErrorSound(FigurineDeviceEntity*);
 bool32 sub_08088160(FigurineDeviceEntity*, s32);
 void FigurineDevice_GetChanceBasedOffFigurineCount(FigurineDeviceEntity*);
+void FigurineDevice_SelectGuaranteedShellAmount(FigurineDeviceEntity*);
 void FigurineDevice_Init(FigurineDeviceEntity*);
 void FigurineDevice_Action1(FigurineDeviceEntity*);
 void FigurineDevice_Action2(FigurineDeviceEntity*);
@@ -251,6 +253,9 @@ void FigurineDevice_Action4(FigurineDeviceEntity* this) {
                 this->shells = 1;
                 ClearRoomFlag(1);
                 sub_0808826C(this);
+                if (Port_Config_GetQuickFigurines()) {
+                    FigurineDevice_SelectGuaranteedShellAmount(this);
+                }
                 sub_080882A8(this);
             } else {
                 sub_080880D8(this);
@@ -303,6 +308,13 @@ void FigurineDevice_Action4(FigurineDeviceEntity* this) {
             this->unk_7a = 0;
             this->unk_7b = 4;
             SetRoomFlag(3);
+            /* The lever only tells the type-1 device to run its normal draw
+             * path.  Queue that exact path after confirmation so the player
+             * keeps the usual result, scripts and save flags without having
+             * to walk over and pull it manually. */
+            if (Port_Config_GetQuickFigurines()) {
+                SetRoomFlag(0);
+            }
             MessageFromTarget(TEXT_INDEX(TEXT_CARLOV, 0x1a));
             if (!REGION_IS_EU) {
                 gMessage.textWindowPosX = 1;
@@ -310,6 +322,33 @@ void FigurineDevice_Action4(FigurineDeviceEntity* this) {
             }
             gMessage.rupees = this->shells;
             break;
+    }
+}
+
+/* The device starts at one shell and increases its displayed chance by one
+ * for every additional shell.  Pick the smallest amount that reaches 100%,
+ * while leaving the ordinary D-pad controls free to lower it again. */
+void FigurineDevice_SelectGuaranteedShellAmount(FigurineDeviceEntity* this) {
+    s32 targetShells;
+    s32 availableShells = gSave.stats.shells;
+    s32 baseChance = this->chance;
+
+    if (availableShells < 1 || CheckLocalFlagB(SHOP07_COMPLETE)) {
+        return;
+    }
+
+    targetShells = 1 + 100 - baseChance;
+    if (targetShells < 1) {
+        targetShells = 1;
+    }
+    if (targetShells > availableShells) {
+        targetShells = availableShells;
+    }
+
+    this->shells = targetShells;
+    this->chance = baseChance + targetShells - 1;
+    if (this->chance > 100) {
+        this->chance = 100;
     }
 }
 

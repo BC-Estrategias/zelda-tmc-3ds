@@ -17,6 +17,9 @@ static circlePosition sCirclePosition;
 static circlePosition sCStickPosition;
 static bool sCStickHeld;
 static bool sQuickDumpRequested;
+static bool sQuickStateSaveRequested;
+static bool sLoadConfirmButtonConsumed;
+static bool sStateShortcutWasHeld;
 static bool sQuickDumpComboWasHeld;
 static bool sRunning;
 static bool sIsNew3DS;
@@ -176,7 +179,9 @@ bool Platform3DS_IsRunning(void) { return sRunning; }
 bool Platform3DS_IsNew3DS(void) { return sIsNew3DS; }
 bool Platform3DS_CanUseCore1(void) { return sCore1Available; }
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
-bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
+/* C-Stick remains the original analogue turbo gesture; ZR is the convenient
+ * digital equivalent for New 3DS hardware. */
+bool Platform3DS_TurboHeld(void) { return sIsNew3DS && (sCStickHeld || (sHeld & KEY_ZR) != 0u); }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
 void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
@@ -251,8 +256,8 @@ static uint16_t MapKeysToGba(uint32_t keys) {
     };
     const bool quickDumpCombo = (keys & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     uint16_t input = 0x03ff;
-    if ((keys & KEY_A) && !quickDumpCombo) input &= ~GBA_A;
-    if (keys & KEY_B) input &= ~GBA_B;
+    if ((keys & KEY_A) && !quickDumpCombo && !sLoadConfirmButtonConsumed) input &= ~GBA_A;
+    if ((keys & KEY_B) && !sLoadConfirmButtonConsumed) input &= ~GBA_B;
     if (keys & KEY_SELECT) input &= ~GBA_SELECT;
     if (keys & KEY_START) input &= ~GBA_START;
     if (keys & (KEY_DRIGHT | KEY_CPAD_RIGHT)) input &= ~GBA_RIGHT;
@@ -260,6 +265,9 @@ static uint16_t MapKeysToGba(uint32_t keys) {
     if (keys & (KEY_DUP | KEY_CPAD_UP)) input &= ~GBA_UP;
     if (keys & (KEY_DDOWN | KEY_CPAD_DOWN)) input &= ~GBA_DOWN;
     if ((keys & KEY_R) && !quickDumpCombo) input &= ~GBA_R;
+    /* Keep the original GBA-L binding available for context-sensitive game
+     * actions, notably Kinstone fusion.  The roll-attack macro lives on Y;
+     * L+R+A remains the diagnostic dump chord handled above the game layer. */
     if ((keys & KEY_L) && !quickDumpCombo) input &= ~GBA_L;
     return input;
 }
@@ -269,6 +277,10 @@ uint16_t Platform3DS_ReadKeyDownInput(void) { return MapKeysToGba(sDown); }
 
 uint32_t Platform3DS_KeysHeld(void) {
     return sHeld;
+}
+
+uint32_t Platform3DS_KeysDown(void) {
+    return sDown;
 }
 
 void Platform3DS_ReadCircle(float* x, float* y) {
@@ -534,6 +546,33 @@ static void PollInput(void) {
         hidTouchRead(&touch);
         Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
     }
+    const bool loadConfirmation = Port_SecondScreen_3DS_LoadConfirmationActive() != 0;
+    if (loadConfirmation && (sDown & KEY_A)) {
+        sLoadConfirmButtonConsumed = true;
+        Port_SecondScreen_3DS_ConfirmLoadState();
+    } else if (loadConfirmation && (sDown & KEY_B)) {
+        sLoadConfirmButtonConsumed = true;
+        Port_SecondScreen_3DS_CancelLoadState();
+    }
+    if (sLoadConfirmButtonConsumed && (sHeld & (KEY_A | KEY_B)) == 0u) {
+        sLoadConfirmButtonConsumed = false;
+    }
+    const bool stateShortcutHeld = (sHeld & KEY_ZL) != 0u;
+    const bool stateShortcutPressed = stateShortcutHeld && !sStateShortcutWasHeld;
+    /* ZL+X writes only the compact load state at the next safe frame
+     * boundary. ZL+Y opens a confirmation before it can replace state. */
+    const bool saveStateChord = (sDown & KEY_X) != 0u || (stateShortcutPressed && (sHeld & KEY_X) != 0u);
+    const bool loadStateChord = (sDown & KEY_Y) != 0u || (stateShortcutPressed && (sHeld & KEY_Y) != 0u);
+    if (!loadConfirmation && stateShortcutHeld && saveStateChord) {
+        sQuickStateSaveRequested = true;
+    } else if (!loadConfirmation && stateShortcutHeld && loadStateChord) {
+        Port_SecondScreen_3DS_RequestLoadState();
+    }
+    sStateShortcutWasHeld = stateShortcutHeld;
+
+    /* X cycles the lower panel without taking focus away from gameplay.
+     * Y is reserved for the roll-attack macro; ZL+Y above remains Load. */
+    if (!loadConfirmation && !stateShortcutHeld && (sDown & KEY_X)) Port_SecondScreen_3DS_CycleTab();
     const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;
     sQuickDumpComboWasHeld = quickDumpCombo;
@@ -561,6 +600,11 @@ void Platform3DS_WaitForVBlank(void) {
         extern void Port_PPU_3DS_WriteQuickDump(void);
         sQuickDumpRequested = false;
         Port_PPU_3DS_WriteQuickDump();
+    }
+    if (sQuickStateSaveRequested) {
+        extern bool Port_DumpState3DS_SaveQuick(void);
+        sQuickStateSaveRequested = false;
+        (void)Port_DumpState3DS_SaveQuick();
     }
     PollInput();
 }

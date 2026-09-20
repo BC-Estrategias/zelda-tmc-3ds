@@ -1001,6 +1001,29 @@ static void HandleFileScreenEnter(void) {
     InitVBlankDMA();
     sub_080503A8(0x5);
     LoadPaletteGroup(0x9);
+    /* File-card hearts share BG palette 15. Keep its complete-heart ramp
+     * red; the empty-heart tile itself is remapped below to palette index 15
+     * (black), so the two states remain visually distinct. */
+    {
+        static const u16 sFileHeartPalette[] = {
+            RGB(0, 0, 0),  RGB(8, 0, 2),  RGB(12, 1, 3), RGB(16, 2, 4),
+            RGB(20, 3, 5), RGB(24, 5, 6), RGB(27, 7, 7), RGB(30, 10, 8),
+            RGB(31, 13, 9), RGB(31, 17, 11), RGB(31, 21, 14), RGB(31, 24, 17),
+            RGB(31, 27, 21), RGB(31, 29, 25), RGB(31, 31, 31), RGB(0, 0, 0),
+        };
+        LoadPalettes((const u8*)sFileHeartPalette, 15, 1);
+    }
+    {
+        /* gUnk_080FC914 draws empty hearts with tile 0x251 and complete
+         * hearts with tile 0x24d. Both normally use palette 15.  Rewrite
+         * only non-transparent pixels of the empty tile to its black entry,
+         * preserving the transparent background and the red complete tile. */
+        volatile u8* emptyHeartTile = (volatile u8*)BG_CHAR_ADDR((gScreen.bg1.control >> 2) & 3) + 0x251 * 32;
+        for (i = 0; i < 32; i++) {
+            u8 pixels = emptyHeartTile[i];
+            emptyHeartTile[i] = (pixels & 0xf0 ? 0xf0 : 0) | (pixels & 0x0f ? 0x0f : 0);
+        }
+    }
     for (i = 0; i < 26; i++) {
         CreateObject(FILE_SCREEN_OBJECTS, i, 0);
     }

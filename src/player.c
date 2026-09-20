@@ -32,6 +32,7 @@
 #ifdef PC_PORT
 #include "port_softslots.h"
 #include "port_roll_attack_macro.h"
+#include "port_runtime_config.h"
 #endif
 #include "save.h"
 #include "scroll.h"
@@ -488,7 +489,9 @@ static void PlayerNormal(PlayerEntity* this) {
             } else if (gPlayerState.gustJarState != PL_JAR_NONE) {
                 super->speed = kWalkSpeedGustJar;
             } else {
-                super->speed = kWalkSpeed;
+                unsigned mode = Port_Config_GetPlayerSpeedMode();
+                super->speed = mode == 2 ? kWalkSpeed * 2 :
+                               mode == 1 ? kWalkSpeed * 3 / 2 : kWalkSpeed;
             }
         }
     }
@@ -1235,7 +1238,13 @@ static void PortalActivateInit(PlayerEntity* this) {
     gRoomControls.camera_target = NULL;
     gPauseMenuOptions.disabled = 1;
     super->subAction = 3;
+    /* The portal's pause is purely presentational.  Keep the normal action
+     * sequence, but remove the dead wait when the QoL option is enabled. */
+#ifdef PC_PORT
+    super->subtimer = Port_Config_GetFastMinishPortal() ? 0 : 30;
+#else
     super->subtimer = 30;
+#endif
     gPlayerState.animation = ANIM_PORTAL_ACTIVATE;
     CreateObjectWithParent(super, EZLO_CAP, 1, 0);
     PutAwayItems();
@@ -1263,6 +1272,21 @@ static void PortalShrinkInit(PlayerEntity* this) {
     gPlayerState.animation = ANIM_PORTAL_SHRINK;
     gPlayerState.flags |= PL_MINISH;
     SoundReq(SFX_PLY_SHRINKING);
+
+#ifdef PC_PORT
+    /* Advance to the same PortalEnterUpdate state the animation reaches.
+     * This preserves dungeon/TOD/overworld exit handling and all portal
+     * flags, while omitting only the affine squash/bounce presentation. */
+    if (Port_Config_GetFastMinishPortal()) {
+        this->unk_80.WORD = 0x340;
+        this->unk_84.WORD = 0x340;
+        SetAffineInfo(super, 0x340, 0x340, 0);
+        super->timer = 0;
+        super->subtimer = 1;
+        super->z.WORD = 0;
+        super->subAction = 6;
+    }
+#endif
 }
 
 static void PortalShrinkUpdate(PlayerEntity* this) {
@@ -3301,8 +3325,13 @@ static void sub_08073D20(PlayerEntity* this) {
     super->spritePriority.b1 = 3;
     super->hurtType = 1;
     ResetPlayerVelocity();
-    if (!gPlayerState.swim_state)
-        super->speed = 0xC0; /* todo: shielding speed? */
+    if (!gPlayerState.swim_state) {
+        /* The Quality-of-Life speed option must follow Link through the
+         * Minish form too. This is its ordinary cruise speed only: portal,
+         * knockback and scripted movement retain their authored pacing. */
+        unsigned mode = Port_Config_GetPlayerSpeedMode();
+        super->speed = mode == 2 ? 0xC0 * 2 : mode == 1 ? 0xC0 * 3 / 2 : 0xC0;
+    }
     if (!sub_08079B24()) {
         sub_08079708(super);
         return;

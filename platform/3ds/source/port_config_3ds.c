@@ -18,6 +18,14 @@ static _Atomic bool sCrests = true;
 static _Atomic bool sFloorReturn = true;
 static _Atomic bool sHideHud;
 static _Atomic bool sHoldText;
+static _Atomic unsigned sPlayerSpeedMode;
+static _Atomic bool sFastText;
+static _Atomic bool sFastSwordCharge = true;
+static _Atomic bool sFastMinishPortal = true;
+static _Atomic bool sQuickKinstones;
+static _Atomic bool sQuickFigurines = true;
+static _Atomic bool sHeartMapMarkers = true;
+static _Atomic bool sStartAtFileSelect;
 static _Atomic bool sColorCorrection;
 static _Atomic bool sAutosave;
 static bool sConsoleParity;
@@ -50,6 +58,8 @@ static int sRandoTricks;
 static int sRandoAccessibility;
 static bool sConfigLoaded;
 static char sConfigPath[256] = "tmc3ds.ini";
+static char sRetroUsername[64];
+static char sRetroToken[128];
 
 static bool ParseBool(const char* value) {
     return value != NULL && (value[0] == '1' || value[0] == 't' || value[0] == 'T' ||
@@ -73,6 +83,14 @@ static void SaveConfig(void) {
     fprintf(file, "floor_auto_return=%u\n", sFloorReturn ? 1u : 0u);
     fprintf(file, "hide_top_hud=%u\n", sHideHud ? 1u : 0u);
     fprintf(file, "hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
+    fprintf(file, "player_speed=%u\n", sPlayerSpeedMode);
+    fprintf(file, "fast_text=%u\n", sFastText ? 1u : 0u);
+    fprintf(file, "fast_sword_charge=%u\n", sFastSwordCharge ? 1u : 0u);
+    fprintf(file, "fast_minish_portal=%u\n", sFastMinishPortal ? 1u : 0u);
+    fprintf(file, "quick_kinstones=%u\n", sQuickKinstones ? 1u : 0u);
+    fprintf(file, "quick_figurines=%u\n", sQuickFigurines ? 1u : 0u);
+    fprintf(file, "heart_map_markers=%u\n", sHeartMapMarkers ? 1u : 0u);
+    fprintf(file, "start_at_file_select=%u\n", sStartAtFileSelect ? 1u : 0u);
     fprintf(file, "color_correction=%u\n", sColorCorrection ? 1u : 0u);
     fprintf(file, "autosave=%u\n", sAutosave ? 1u : 0u);
     fprintf(file, "widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
@@ -98,6 +116,8 @@ static void SaveConfig(void) {
     fprintf(file, "rando_heart_color=%d\n", sRandoHeartColor);
     fprintf(file, "rando_tricks=%d\n", sRandoTricks);
     fprintf(file, "rando_accessibility=%d\n", sRandoAccessibility);
+    fprintf(file, "retro_username=%s\n", sRetroUsername);
+    fprintf(file, "retro_token=%s\n", sRetroToken);
 
     /* A synchronous SD flush can stall the 3DS main thread for seconds on
      * every Settings change. The temporary file plus close/rename/backup
@@ -129,17 +149,25 @@ void Port_Config_Load(const char* path) {
     bool hasScreenAspect = false;
     FILE* file = fopen(sConfigPath, "rb");
     if (file) {
-        char line[160];
+        char line[256];
         while (fgets(line, sizeof(line), file) != NULL) {
             char key[64];
-            char value[64];
-            if (line[0] == '#' || sscanf(line, " %63[^=]=%63s", key, value) != 2) continue;
+            char value[128];
+            if (line[0] == '#' || sscanf(line, " %63[^=]=%127s", key, value) != 2) continue;
             if (strcmp(key, "show_fps") == 0) sShowFps = ParseBool(value);
             else if (strcmp(key, "follow_cam") == 0) sFollow = ParseBool(value);
             else if (strcmp(key, "windcrest_pins") == 0) sCrests = ParseBool(value);
             else if (strcmp(key, "floor_auto_return") == 0) sFloorReturn = ParseBool(value);
             else if (strcmp(key, "hide_top_hud") == 0) sHideHud = ParseBool(value);
             else if (strcmp(key, "hold_to_advance_text") == 0) sHoldText = ParseBool(value);
+            else if (strcmp(key, "player_speed") == 0) sPlayerSpeedMode = (unsigned)strtoul(value, NULL, 10);
+            else if (strcmp(key, "fast_text") == 0) sFastText = ParseBool(value);
+            else if (strcmp(key, "fast_sword_charge") == 0) sFastSwordCharge = ParseBool(value);
+            else if (strcmp(key, "fast_minish_portal") == 0) sFastMinishPortal = ParseBool(value);
+            else if (strcmp(key, "quick_kinstones") == 0) sQuickKinstones = ParseBool(value);
+            else if (strcmp(key, "quick_figurines") == 0) sQuickFigurines = ParseBool(value);
+            else if (strcmp(key, "heart_map_markers") == 0) sHeartMapMarkers = ParseBool(value);
+            else if (strcmp(key, "start_at_file_select") == 0) sStartAtFileSelect = ParseBool(value);
             else if (strcmp(key, "color_correction") == 0) sColorCorrection = ParseBool(value);
             else if (strcmp(key, "autosave") == 0) sAutosave = ParseBool(value);
             else if (strcmp(key, "widescreen") == 0 && !hasScreenAspect)
@@ -170,6 +198,8 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "rando_heart_color") == 0) sRandoHeartColor = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "rando_tricks") == 0) sRandoTricks = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "rando_accessibility") == 0) sRandoAccessibility = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "retro_username") == 0) snprintf(sRetroUsername, sizeof(sRetroUsername), "%s", value);
+            else if (strcmp(key, "retro_token") == 0) snprintf(sRetroToken, sizeof(sRetroToken), "%s", value);
         }
         fclose(file);
     }
@@ -178,6 +208,7 @@ void Port_Config_Load(const char* path) {
     if (sVolume > 1.0f) sVolume = 1.0f;
     if (sBackdrop < 0 || sBackdrop > 6) sBackdrop = 0;
     if (sTurboMultiplier < 2 || sTurboMultiplier > 5) sTurboMultiplier = 5;
+    if (sPlayerSpeedMode > 2) sPlayerSpeedMode = 0;
     if (sRandoItemPool < 0 || sRandoItemPool >= RANDO_ITEM_POOL_COUNT) sRandoItemPool = RANDO_ITEM_POOL_NORMAL;
     if (sRandoTunicColor < 0 || sRandoTunicColor > 6) sRandoTunicColor = 0;
     if (sRandoHeartColor < 0 || sRandoHeartColor > 6) sRandoHeartColor = 0;
@@ -187,6 +218,27 @@ void Port_Config_Load(const char* path) {
     Platform3DS_SetTurboMultiplier(sTurboMultiplier);
     sConfigLoaded = true;
 }
+
+bool Port_Config_GetRetroAchievementsSession(char* username, size_t usernameSize, char* token, size_t tokenSize) {
+    if (!username || !token || usernameSize == 0 || tokenSize == 0 || !sRetroUsername[0] || !sRetroToken[0]) return false;
+    snprintf(username, usernameSize, "%s", sRetroUsername);
+    snprintf(token, tokenSize, "%s", sRetroToken);
+    return true;
+}
+
+void Port_Config_SetRetroAchievementsSession(const char* username, const char* token) {
+    if (!username || !token || !username[0] || !token[0]) return;
+    snprintf(sRetroUsername, sizeof(sRetroUsername), "%s", username);
+    snprintf(sRetroToken, sizeof(sRetroToken), "%s", token);
+    SaveConfig();
+}
+
+void Port_Config_ClearRetroAchievementsSession(void) {
+    memset(sRetroUsername, 0, sizeof(sRetroUsername));
+    memset(sRetroToken, 0, sizeof(sRetroToken));
+    SaveConfig();
+}
+
 void Port_Config_SetActiveSaveProfile(const char* path) { (void)path; }
 u8 Port_Config_WindowScale(void) { return 1; }
 const char* Port_Config_UpscaleMethod(void) { return "nearest"; }
@@ -292,6 +344,22 @@ float Port_Config_GetLcdPersistenceRho(void) { return 0.0f; }
 void Port_Config_SetLcdPersistenceRho(float v) { (void)v; }
 bool Port_Config_GetHoldToAdvanceText(void) { return sHoldText; }
 void Port_Config_SetHoldToAdvanceText(bool on) { sHoldText = on; SaveConfig(); }
+unsigned Port_Config_GetPlayerSpeedMode(void) { return sPlayerSpeedMode; }
+void Port_Config_SetPlayerSpeedMode(unsigned mode) { sPlayerSpeedMode = mode > 2 ? 0 : mode; SaveConfig(); }
+bool Port_Config_GetFastText(void) { return sFastText; }
+void Port_Config_SetFastText(bool on) { sFastText = on; SaveConfig(); }
+bool Port_Config_GetFastSwordCharge(void) { return sFastSwordCharge; }
+void Port_Config_SetFastSwordCharge(bool on) { sFastSwordCharge = on; SaveConfig(); }
+bool Port_Config_GetFastMinishPortal(void) { return sFastMinishPortal; }
+void Port_Config_SetFastMinishPortal(bool on) { sFastMinishPortal = on; SaveConfig(); }
+bool Port_Config_GetQuickKinstones(void) { return sQuickKinstones; }
+void Port_Config_SetQuickKinstones(bool on) { sQuickKinstones = on; SaveConfig(); }
+bool Port_Config_GetQuickFigurines(void) { return sQuickFigurines; }
+void Port_Config_SetQuickFigurines(bool on) { sQuickFigurines = on; SaveConfig(); }
+bool Port_Config_GetHeartMapMarkers(void) { return sHeartMapMarkers; }
+void Port_Config_SetHeartMapMarkers(bool on) { sHeartMapMarkers = on; SaveConfig(); }
+bool Port_Config_GetStartAtFileSelect(void) { return sStartAtFileSelect; }
+void Port_Config_SetStartAtFileSelect(bool on) { sStartAtFileSelect = on; SaveConfig(); }
 float Port_Config_GetMasterVolume(void) { return sVolume; }
 void Port_Config_SetMasterVolume(float v) {
     sVolume = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
@@ -345,11 +413,23 @@ void Port_Config_OpenGamepads(void) {}
 void Port_Config_CloseGamepads(void) {}
 
 bool Port_Config_InputPressed(PortInput input) {
+    if (input == PORT_INPUT_ROLL_ATTACK) {
+        enum { KEY_3DS_Y = 1u << 11, KEY_3DS_ZL = 1u << 14 };
+        const uint32_t keys = Platform3DS_KeysHeld();
+        /* ZL+Y is the load-state chord, never a macro command. */
+        return (keys & KEY_3DS_Y) != 0u && (keys & KEY_3DS_ZL) == 0u;
+    }
     const u16 keys = (u16)(~Platform3DS_ReadKeyInput()) & 0x03ff;
     static const u16 masks[10] = { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 };
     return input < 10 && (keys & masks[input]) != 0;
 }
 bool Port_Config_InputEdgePressed(PortInput input) {
+    if (input == PORT_INPUT_ROLL_ATTACK) {
+        enum { KEY_3DS_Y = 1u << 11, KEY_3DS_ZL = 1u << 14 };
+        const uint32_t held = Platform3DS_KeysHeld();
+        const uint32_t down = Platform3DS_KeysDown();
+        return (down & KEY_3DS_Y) != 0u && (held & KEY_3DS_ZL) == 0u;
+    }
     const u16 keys = (u16)(~Platform3DS_ReadKeyDownInput()) & 0x03ff;
     static const u16 masks[10] = { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 };
     return input < 10 && (keys & masks[input]) != 0;

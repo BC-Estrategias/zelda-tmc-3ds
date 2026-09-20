@@ -32,6 +32,31 @@ extern "C" {
  * equipable slots of the pause menu's item screen, excluding the save
  * button pseudo-slots. */
 #define SECOND_SCREEN_ITEM_SLOTS 16
+#define SECOND_SCREEN_HEART_MARKERS 48
+
+/* One persistent heart-piece location decoded from the active ROM. The
+ * coordinates are world-map pixels (the same space used by the map cursor
+ * and the bottom-screen heart pins), not screen pixels. */
+typedef struct {
+    uint8_t area;
+    uint16_t flag;
+    int16_t x;
+    int16_t y;
+    const char* name;
+    uint8_t source; /* 1 = named vanilla location, 2 = map object fallback */
+} PortHeartMapReportEntry;
+
+/* CHEATS only restores resources already present in the save; it never
+ * grants inventory, quest progress, or new Kinstone types. */
+typedef enum {
+    SECOND_SCREEN_RESOURCE_NONE = 0,
+    SECOND_SCREEN_RESOURCE_HEARTS,
+    SECOND_SCREEN_RESOURCE_RUPEES,
+    SECOND_SCREEN_RESOURCE_SHELLS,
+    SECOND_SCREEN_RESOURCE_KINSTONES,
+    SECOND_SCREEN_RESOURCE_BOMBS,
+    SECOND_SCREEN_RESOURCE_ARROWS,
+} SecondScreenResource;
 
 typedef struct {
     uint16_t x, y; /* room origin within the area, pixels (RoomResInfo.map_x/y) */
@@ -164,6 +189,13 @@ typedef struct {
      * bottleContents[] carries what's inside for icon display. */
     uint8_t menuItems[SECOND_SCREEN_ITEM_SLOTS];
     uint8_t bottleContents[4];
+    /* Genuine, uncollected overworld heart pieces sampled from the ROM room
+     * lists.  Keep each source area: a world coordinate only has meaning in
+     * that area's map space, not in Link's current area. */
+    uint8_t heartMarkerCount;
+    uint8_t heartMarkerArea[SECOND_SCREEN_HEART_MARKERS];
+    int16_t heartMarkerX[SECOND_SCREEN_HEART_MARKERS];
+    int16_t heartMarkerY[SECOND_SCREEN_HEART_MARKERS];
     /* Rooms of the current area, indexed by room id. */
     SecondScreenRoom rooms[SECOND_SCREEN_MAX_ROOMS];
     /* Bit n set = room n of the current area has been entered this session
@@ -222,6 +254,16 @@ void Port_SecondScreenState_Read(SecondScreenSnapshot* out);
  * the inventory) on the game thread during the next Publish(); redundant
  * or invalid requests are dropped there. */
 void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot);
+
+/* Queued by the touch UI and applied on the game thread by Publish(). */
+void Port_SecondScreenState_RequestResource(SecondScreenResource resource);
+
+/* Returns the number of currently uncollected persistent heart pieces. When
+ * entries is non-NULL, writes up to capacity locations. This is called by
+ * the 3DS quick-dump writer, making the diagnostic independent from the
+ * visual map pins. */
+unsigned Port_SecondScreenState_GetMissingHeartPieces(PortHeartMapReportEntry* entries,
+                                                       unsigned capacity);
 
 #ifdef __cplusplus
 }

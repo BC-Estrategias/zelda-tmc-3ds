@@ -65,6 +65,7 @@
 #ifdef TMC_3DS
 #include "platform_3ds.h"
 #include "port_dump_state_3ds.h"
+#include "port_retroachievements.h"
 
 extern void Port_PPU_3DS_WriteQuickDump(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -133,7 +134,7 @@ static const int8_t kDungeonTopFloor[7] = { 2, 3, 3, 5, 2, 7, 5 };
 /*  UI state shared with the tap handler                               */
 /* ------------------------------------------------------------------ */
 
-enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_SETTINGS };
+enum { SS_TAB_MAP = 0, SS_TAB_ITEMS, SS_TAB_QUEST, SS_TAB_CHEATS, SS_TAB_SETTINGS };
 
 /* What a tap target does when hit. arg meaning per action: item id,
  * tab id, ring (1 = A, 2 = B), plaque display-floor index, settings row.
@@ -154,19 +155,31 @@ enum {
     SS_ACT_SETTINGS_BACK,
     SS_ACT_DEVELOPER_DUMP,
     SS_ACT_DEVELOPER_LOAD,
+    SS_ACT_DEVELOPER_STATES,
+    SS_ACT_STATE_SAVE, /* arg: 0 quick, 1..3 named slot */
+    SS_ACT_STATE_LOAD, /* arg: 0 quick, 1..3 named slot */
     SS_ACT_LOAD_CANCEL,
     SS_ACT_LOAD_CONFIRM,
     SS_ACT_RANDO_CANCEL,
     SS_ACT_RANDO_CONFIRM,
+    SS_ACT_RESOURCE,
+    SS_ACT_RETRO_LOGIN,
+    SS_ACT_RETRO_LOGOUT,
+    SS_ACT_RETRO_PREV,
+    SS_ACT_RETRO_NEXT,
 };
 
 enum {
     SS_SETTINGS_ROOT = 0,
     SS_SETTINGS_SCREEN,
     SS_SETTINGS_GAMEPLAY,
+    SS_SETTINGS_QOL,
     SS_SETTINGS_DEVELOPER,
+    SS_SETTINGS_STATES,
     SS_SETTINGS_OVERLAY,
     SS_SETTINGS_RANDOMIZER,
+    SS_SETTINGS_RETROACHIEVEMENTS,
+    SS_SETTINGS_RETRO_LIST,
 };
 
 /* Settings rows, top to bottom. The second-screen-only toggles persist
@@ -180,11 +193,19 @@ enum {
     SS_SET_CRESTS,
     SS_SET_FLOOR_RETURN,
     SS_SET_TURBO,
+    SS_SET_PLAYER_SPEED,
+    SS_SET_FAST_TEXT,
+    SS_SET_FAST_SWORD_CHARGE,
+    SS_SET_FAST_MINISH_PORTAL,
+    SS_SET_QUICK_KINSTONES,
+    SS_SET_QUICK_FIGURINES,
+    SS_SET_HEART_MAP_MARKERS,
     SS_SET_VOLUME,        /* master_volume, cycles 0/25/50/75/100% */
     SS_SET_AUTOSAVE,      /* autosave_enabled via Port_QuickSave */
     SS_SET_COLOR_CORRECTION, /* color_correction + live PPU toggle */
     SS_SET_SHOW_FPS,      /* show_fps (overlay reads it per frame) */
     SS_SET_HOLD_ADVANCE,  /* hold_advance_text (message.c reads per frame) */
+    SS_SET_START_FILE_SELECT, /* next boot opens the original save selector */
     SS_SET_RANDOMIZER,
     SS_SET_BACKDROP,      /* second_screen_backdrop: cycles SS_BACKDROP_* */
     SS_SET_SWAP_SCREENS,  /* second_screen_swap; applied at the next launch */
@@ -259,6 +280,7 @@ static int sTapTargetCount = 0;
 static struct {
     uint8_t tab;
     uint8_t settingsPage;
+    uint8_t retroAchievementPage;
     uint8_t wholeMap;   /* map tab: whole-Hyrule view instead of follow cam */
     uint8_t armedRing;  /* 0 none, 1 = next item tap assigns A, 2 = B */
     int8_t floorPreview; /* plaque-selected display floor, SS_NO_FLOOR = live */
@@ -292,6 +314,10 @@ static struct {
     uint32_t loadStateFlashUntil;
     uint8_t loadStateResult;
     uint8_t loadConfirmActive;
+    uint8_t loadSlot;
+    uint32_t stateSaveFlashUntil;
+    uint8_t stateSaveSlot;
+    uint8_t stateSaveSucceeded;
     uint8_t randoConfirmActive;
     uint8_t randoDesired;
 } sUi = { .floorPreview = SS_NO_FLOOR, .playerFloorDisp = SS_NO_FLOOR };
@@ -403,6 +429,45 @@ static void BlitSprite(const SSurf* s, const SecondScreenThemeSprite* spr, int32
             }
         }
     }
+}
+
+/* RetroAchievements badge cache. The 3DS downloader stores the official
+ * 64x64 PNG decoded as RGBA, so this menu path stays portable and performs
+ * no network work while the player browses achievements. */
+static void BlitRetroBadge(const SSurf* s, const char* badgeName, int32_t x, int32_t y, int32_t size) {
+    static char cachedName[32];
+    static uint8_t cachedRgba[64 * 64 * 4];
+    static int cachedValid;
+    char path[96];
+    FILE* file;
+    if (!badgeName || !badgeName[0] || size < 1) return;
+    if (strcmp(cachedName, badgeName) != 0) {
+        cachedValid = 0;
+        snprintf(path, sizeof(path), "ra_badges/%s.rgba", badgeName);
+        file = fopen(path, "rb");
+        if (file) {
+            cachedValid = fread(cachedRgba, 1, sizeof(cachedRgba), file) == sizeof(cachedRgba);
+            fclose(file);
+        }
+        snprintf(cachedName, sizeof(cachedName), "%s", badgeName);
+    }
+    if (!cachedValid) {
+        FillRect(s, x, y, x + size, y + size, RGB(100, 100, 100));
+        OutlineRect(s, x, y, x + size, y + size, size > 20 ? 2 : 1, RGB(50, 50, 50));
+        return;
+    }
+    for (int32_t dy = 0; dy < size; ++dy) {
+        const int32_t sy = dy * 64 / size;
+        if (y + dy < 0 || y + dy >= s->h) continue;
+        uint32_t* row = s->px + (size_t)(y + dy) * (size_t)s->stride;
+        for (int32_t dx = 0; dx < size; ++dx) {
+            const int32_t sx = dx * 64 / size;
+            const uint8_t* pixel = &cachedRgba[(sy * 64 + sx) * 4];
+            if (pixel[3] >= 16 && x + dx >= 0 && x + dx < s->w)
+                row[x + dx] = RGB(pixel[0], pixel[1], pixel[2]);
+        }
+    }
+    OutlineRect(s, x, y, x + size, y + size, size > 20 ? 2 : 1, RGB(45, 45, 45));
 }
 
 /* Chunky filled diamond (the four-element motif); r is the half-height. */
@@ -1134,6 +1199,33 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         }
     }
 
+    /* The snapshot only carries real outdoor heart-piece objects, never
+     * generic healing drops.  Use each pin's source area: reusing Link's
+     * current area projects valid coordinates into unrelated regions. */
+    for (uint8_t i = 0; i < snap->heartMarkerCount; i++) {
+        int32_t hx, hy;
+        if (!Port_SecondScreenWorldMap_LocatePlayer(snap->heartMarkerArea[i], snap->heartMarkerX[i],
+                                                    snap->heartMarkerY[i], &hx, &hy)) {
+            continue;
+        }
+        /* The image includes parchment/frame pixels outside the actual
+         * overworld. Never stamp a heart in that decorative border. */
+        if (hx < WMAP_CROP_X0 || hx >= WMAP_CROP_X1 || hy < WMAP_CROP_Y0 || hy >= WMAP_CROP_Y1) {
+            continue;
+        }
+        float px = ox + (hx + 0.5f) * sCam.scale;
+        float py = oy + (hy + 0.5f) * sCam.scale;
+        if (px >= rx0 && px < rx1 && py >= ry0 && py < ry1) {
+            const SecondScreenThemeSprite* heart = Port_SecondScreenTheme_Get(SST_HEART_FULL);
+            int32_t heartScale = (int32_t)(wholeScale * 0.75f + 0.5f);
+            if (heartScale < 1) heartScale = 1;
+            if (heart != NULL) {
+                BlitSprite(s, heart, (int32_t)px - 4 * heartScale,
+                           (int32_t)py - 4 * heartScale, heartScale);
+            }
+        }
+    }
+
     /* Windcrest warp points as small pins (green — the fast-travel accent),
      * gated by the settings toggle. Ids are the bit index within the
      * windcrests word's top byte, exactly what GetWindcrestPin expects. */
@@ -1479,12 +1571,10 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
     float inset = 12 * ts;
     float ix0 = rx0 + inset, iy0 = ry0 + inset, ix1 = rx1 - inset, iy1 = ry1 - inset;
 
-    /* Header: the menu's red chip, hung over the slab's top band exactly
-     * like the pause screens hang theirs. */
-    int32_t hms = (int32_t)(2.4f * u);
-    if (hms < 1) hms = 1;
-    DrawPanelHeaderChip(s, (rx0 + rx1) / 2.0f, iy0, "ITEMS", hms, u);
-    iy0 += MENU_TEXT_BOX * hms + 32 * u;
+    /* This is a direct launcher, not a pause-menu reproduction: omit the
+     * redundant title and spend the recovered vertical band on the cells.
+     * It makes each tap target substantially larger on the 3DS touchscreen. */
+    iy0 += 4 * u;
 
     const int cols = 4, rows = 4;
     int32_t cellW = (int32_t)(ix1 - ix0) / cols;
@@ -1495,7 +1585,7 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
     }
     int32_t gx0 = (int32_t)(ix0 + ((ix1 - ix0) - cell * cols) / 2);
     int32_t gy0 = (int32_t)(iy0 + ((iy1 - iy0) - cell * rows) / 2);
-    int32_t gap = cell / 12;
+    int32_t gap = cell / 16;
     int32_t seam = ts > 2 ? ts / 2 : 1;
 
     uint32_t stoneDark = Port_SecondScreenTheme_Color(SSC_MENU_STONE_DARK);
@@ -1546,7 +1636,7 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
         }
         int32_t iconScale = (cell - 2 * gap - 4 * seam) / 16;
         if (iconScale < 1) iconScale = 1;
-        if (iconScale > 6) iconScale = 6; /* GBA icons turn to mush past 6x */
+        if (iconScale > 7) iconScale = 7; /* GBA icons turn to mush past 7x */
         int32_t iconX = (cx0 + cx1) / 2 - 8 * iconScale;
         int32_t iconY = (cy0 + cy1) / 2 - 8 * iconScale;
         Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, iconX, iconY, iconScale, iconId);
@@ -1788,12 +1878,14 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 /* ------------------------------------------------------------------ */
 
 static const char* const kSettingLabels[SS_SET_COUNT] = {
-    "TOP HUD",          "WIDESCREEN",        "FOLLOW CAM",       "WINDCREST PINS",
-    "FLOOR AUTO RETURN", "TURBO SPEED",       "MASTER VOLUME",    "AUTOSAVE",
-    "COLOR CORRECTION", "SHOW FPS",           "HOLD TO ADVANCE TEXT",
-    "RANDOMIZER",       "PANEL BACKDROP",     "SWAP SCREENS",
+    "HUD SUPERIOR",     "TELA LARGA",         "CAMERA SEGUE",     "MARCAS DO VENTO",
+    "RETORNO DE ANDAR", "VELOCIDADE TURBO",   "VELOCIDADE LINK", "TEXTO RAPIDO",
+    "CARGA ESPADA",     "PORTAL RAPIDO",    "KINSTONE RAPIDO", "MINIATURAS RAPIDAS", "CORACOES NO MAPA", "VOLUME PRINCIPAL",
+    "SALVAR AUTOMATICO",
+    "CORRECAO DE COR",  "MOSTRAR FPS",        "SEGURE P/ AVANCAR", "INICIAR: ARQUIVOS",
+    "ALEATORIZADOR",    "FUNDO DO PAINEL",     "TROCAR TELAS",
 #ifdef TMC_3DS
-    "ASPECT RATIO",     "DISPLAY STYLE",
+    "PROPORCAO",        "ESTILO DE IMAGEM",
 #endif
 };
 
@@ -1805,7 +1897,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
  * a brightness ramp (DARK sits mid-list). Every word here is inside
  * SS_SET_WIDEST_VALUE, so none of them widen the value chip. */
 static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
-    "PATTERN", "CREAM", "DARK", "DIM", "STONE", "SLATE", "NAVY"
+    "PADRAO", "CREME", "ESCURO", "SUAVE", "PEDRA", "ARDOSIA", "MARINHO"
 };
 
 /* Reserve only the width a row can actually use. A single global value
@@ -1813,16 +1905,17 @@ static const char* const kBackdropWords[SS_BACKDROP_COUNT] = {
  * though their chips only ever say ON/OFF. */
 static const char* SettingValueMinWord(int setting) {
     switch (setting) {
-        case SS_SET_TOP_HUD: return "SHOW";
+        case SS_SET_TOP_HUD: return "MOSTRAR";
         case SS_SET_TURBO: return "X5";
+        case SS_SET_PLAYER_SPEED: return "1.5X";
         case SS_SET_VOLUME: return "100";
-        case SS_SET_BACKDROP: return "PATTERN";
-        case SS_SET_SWAP_SCREENS: return "RESTART";
+        case SS_SET_BACKDROP: return "PADRAO";
+        case SS_SET_SWAP_SCREENS: return "REINICIAR";
 #ifdef TMC_3DS
         case SS_SET_ASPECT_RATIO: return "ORIGINAL";
-        case SS_SET_DISPLAY_STYLE: return "PIXEL PERFECT";
+        case SS_SET_DISPLAY_STYLE: return "PIXEL PERFEITO";
 #endif
-        default: return "OFF";
+        default: return "DESLIGADO";
     }
 }
 
@@ -1864,6 +1957,15 @@ static int SettingsPageRows(int page, uint8_t* out) {
         out[n++] = SS_SET_VOLUME;
         out[n++] = SS_SET_AUTOSAVE;
         out[n++] = SS_SET_HOLD_ADVANCE;
+        out[n++] = SS_SET_START_FILE_SELECT;
+    } else if (page == SS_SETTINGS_QOL) {
+        out[n++] = SS_SET_PLAYER_SPEED;
+        out[n++] = SS_SET_FAST_TEXT;
+        out[n++] = SS_SET_FAST_SWORD_CHARGE;
+        out[n++] = SS_SET_FAST_MINISH_PORTAL;
+        out[n++] = SS_SET_QUICK_KINSTONES;
+        out[n++] = SS_SET_QUICK_FIGURINES;
+        out[n++] = SS_SET_HEART_MAP_MARKERS;
     }
 #ifdef TMC_3DS
     else if (page == SS_SETTINGS_RANDOMIZER) {
@@ -1875,16 +1977,22 @@ static int SettingsPageRows(int page, uint8_t* out) {
 
 static const char* SettingsPageTitle(int page) {
     switch (page) {
-        case SS_SETTINGS_SCREEN: return "SCREEN";
-        case SS_SETTINGS_GAMEPLAY: return "GAMEPLAY";
-        case SS_SETTINGS_DEVELOPER: return "DEVELOPER";
-        case SS_SETTINGS_OVERLAY: return "OVERLAY";
-        case SS_SETTINGS_RANDOMIZER: return "RANDOMIZER";
-        default: return "SETTINGS";
+        case SS_SETTINGS_SCREEN: return "TELA";
+        case SS_SETTINGS_GAMEPLAY: return "JOGO";
+        case SS_SETTINGS_QOL: return "QUALIDADE DE VIDA";
+        case SS_SETTINGS_DEVELOPER: return "DESENVOLVEDOR";
+        case SS_SETTINGS_STATES: return "SAVE STATES";
+        case SS_SETTINGS_OVERLAY: return "SOBREPOSICAO";
+        case SS_SETTINGS_RANDOMIZER: return "ALEATORIZADOR";
+        case SS_SETTINGS_RETROACHIEVEMENTS: return "CONQUISTAS";
+        case SS_SETTINGS_RETRO_LIST: return "LISTA";
+        default: return "AJUSTES";
     }
 }
 
 static int SettingsBackPage(int page) {
+    if (page == SS_SETTINGS_STATES) return SS_SETTINGS_DEVELOPER;
+    if (page == SS_SETTINGS_RETRO_LIST) return SS_SETTINGS_RETROACHIEVEMENTS;
     return page == SS_SETTINGS_OVERLAY ? SS_SETTINGS_DEVELOPER : SS_SETTINGS_ROOT;
 }
 
@@ -1916,7 +2024,9 @@ static void DrawSettingsBack(const SSurf* s, TargetList* tl, float x0, float y0,
                              float u, int32_t ts) {
     float w = 154 * u;
     if (w < 54) w = 54;
-    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, "BACK", 0, 0, u, ts);
+    /* Header controls use a larger fixed text scale than setting rows. Keep
+     * this concise so it remains visible on the 320px bottom screen. */
+    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, "MENU", 0, 0, u, ts);
     AddTarget(tl, x0, y0, x0 + w, y0 + h, SS_ACT_SETTINGS_BACK, (uint8_t)backPage);
 }
 
@@ -1979,6 +2089,140 @@ static void DrawDeveloperActionRow(const SSurf* s, TargetList* tl, float x0, flo
     AddTarget(tl, x0, y0, x1, y1, action, 0);
 }
 
+#ifdef TMC_3DS
+static void CopyShortText(char* out, size_t outSize, const char* text, size_t maxChars) {
+    size_t n;
+    size_t written = 0;
+    if (!out || outSize == 0) return;
+    if (!text) text = "";
+    n = strlen(text);
+    if (n > maxChars) n = maxChars;
+    for (size_t i = 0; i < n && written + 1 < outSize; ++i) {
+        const unsigned char c = (unsigned char)text[i];
+        /* The Minish Cap menu font has a deliberately small character set.
+         * Keep remote achievement text inside it rather than drawing tile
+         * garbage for parentheses, slashes, smart quotes and other UTF-8. */
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            c == ' ' || c == '-' || c == '.' || c == ',' || c == ':' || c == '\'' || c == '!' || c == '?')
+            out[written++] = (char)c;
+        else if (c < 0x80)
+            out[written++] = ' ';
+    }
+    if (strlen(text) > maxChars && written + 4 < outSize) {
+        out[written++] = '.';
+        out[written++] = '.';
+        out[written++] = '.';
+    }
+    out[written] = '\0';
+}
+
+static void DrawRetroAchievementRow(const SSurf* s, float x0, float y0, float x1, float y1,
+                                    const PortRetroAchievement* achievement, float u, int32_t ts) {
+    char title[40];
+    char description[64];
+    char state[20];
+    int32_t titleScale = (int32_t)(1.20f * u);
+    int32_t descriptionScale = (int32_t)(0.95f * u);
+    if (titleScale < 1) titleScale = 1;
+    if (descriptionScale < 1) descriptionScale = 1;
+    Port_SecondScreenTheme_DrawWell(s->px, s->w, s->h, s->stride, (int32_t)x0, (int32_t)y0,
+                                    (int32_t)(x1 - x0), (int32_t)(y1 - y0), ts > 3 ? 3 : ts);
+    CopyShortText(title, sizeof(title), achievement->title, 25);
+    CopyShortText(description, sizeof(description), achievement->description, 42);
+    snprintf(state, sizeof(state), "%s %luP", achievement->unlocked ? "OK" : "--",
+             (unsigned long)achievement->points);
+    const int32_t badgeSize = (int32_t)(38 * u);
+    const int32_t textX = (int32_t)(x0 + (18 + 46) * u);
+    BlitRetroBadge(s, achievement->badgeName, (int32_t)(x0 + 12 * u), (int32_t)(y0 + 12 * u), badgeSize);
+    MenuTextDraw(s, title, textX, (int32_t)(y0 + 14 * u), titleScale, SS_TEXT_INK);
+    MenuTextDraw(s, state, (int32_t)(x1 - 18 * u - MenuTextWidth(state, titleScale)), (int32_t)(y0 + 14 * u),
+                 titleScale, achievement->unlocked ? SS_TEXT_RED : SS_TEXT_INK);
+    MenuTextDraw(s, description, textX, (int32_t)(y0 + 66 * u), descriptionScale, SS_TEXT_INK);
+}
+
+/* Gallery card for the achievement browser: at 320x240 a two-column grid
+ * gives each badge room to breathe, while retaining a readable title without
+ * the remote description and point value crowding the panel. */
+static void DrawRetroAchievementCard(const SSurf* s, float x0, float y0, float x1, float y1,
+                                     const PortRetroAchievement* achievement, float u, int32_t ts) {
+    char title[32];
+    int32_t titleScale = (int32_t)(1.05f * u);
+    int32_t badgeSize = (int32_t)(40 * u);
+    if (titleScale < 1) titleScale = 1;
+    if (badgeSize < 20) badgeSize = 20;
+    Port_SecondScreenTheme_DrawWell(s->px, s->w, s->h, s->stride, (int32_t)x0, (int32_t)y0,
+                                    (int32_t)(x1 - x0), (int32_t)(y1 - y0), ts > 3 ? 3 : ts);
+    CopyShortText(title, sizeof(title), achievement->title, 16);
+    BlitRetroBadge(s, achievement->badgeName, (int32_t)(x0 + 8 * u),
+                   (int32_t)((y0 + y1 - badgeSize) * 0.5f), badgeSize);
+    MenuTextDraw(s, title, (int32_t)(x0 + 54 * u), (int32_t)((y0 + y1) * 0.5f - 8 * titleScale),
+                 titleScale, achievement->unlocked ? SS_TEXT_RED : SS_TEXT_INK);
+}
+#endif
+
+static void DrawCheatActionRow(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1,
+                               const char* label, const char* value, SecondScreenResource resource,
+                               float u, int32_t ts) {
+    DrawMenuButton(s, x0, y0, x1, y1, "", 0, 0, u, ts);
+    int32_t ms = (int32_t)(1.8f * u);
+    if (ms < 1) ms = 1;
+    MenuTextDraw(s, label, (int32_t)(x0 + 18 * u), (int32_t)((y0 + y1) / 2 - 8 * ms), ms, SS_TEXT_NAVY);
+    MenuTextDraw(s, value, (int32_t)(x1 - 18 * u - MenuTextWidth(value, ms)),
+                 (int32_t)((y0 + y1) / 2 - 8 * ms), ms, SS_TEXT_RED);
+    AddTarget(tl, x0, y0, x1, y1, SS_ACT_RESOURCE, (uint8_t)resource);
+}
+
+static void PaintCheatsPanel(const SSurf* s, TargetList* tl, float rx0, float ry0, float rx1, float ry1,
+                             float u, int32_t ts) {
+    static const struct {
+        const char* label;
+        const char* value;
+        SecondScreenResource resource;
+    } rows[] = {
+        { "RECUPERAR VIDA", "CHEIO", SECOND_SCREEN_RESOURCE_HEARTS },
+        { "RUPIAS", "999", SECOND_SCREEN_RESOURCE_RUPEES },
+        { "CONCHAS", "999", SECOND_SCREEN_RESOURCE_SHELLS },
+        { "KINSTONES", "99", SECOND_SCREEN_RESOURCE_KINSTONES },
+        { "BOMBAS", "CHEIO", SECOND_SCREEN_RESOURCE_BOMBS },
+        { "FLECHAS", "CHEIO", SECOND_SCREEN_RESOURCE_ARROWS },
+    };
+
+    Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)rx0, (int32_t)ry0,
+                                     (int32_t)(rx1 - rx0), (int32_t)(ry1 - ry0), ts);
+    float ix0 = rx0 + 12 * u, ix1 = rx1 - 12 * u;
+    int32_t hms = (int32_t)(2.3f * u);
+    if (hms < 1) hms = 1;
+    DrawPanelHeaderChip(s, (rx0 + rx1) / 2, ry0 + 8 * u, "CHEATS", hms, u);
+    float y0 = ry0 + MENU_TEXT_BOX * hms + 34 * u;
+    float gap = 6 * u;
+    const unsigned count = sizeof(rows) / sizeof(rows[0]);
+    float rowH = (ry1 - 12 * u - y0 - (float)(count - 1) * gap) / (float)count;
+    for (unsigned i = 0; i < count; ++i) {
+        float y = y0 + i * (rowH + gap);
+        DrawCheatActionRow(s, tl, ix0, y, ix1, y + rowH, rows[i].label, rows[i].value, rows[i].resource, u, ts);
+    }
+}
+
+static void PaintStateSlotsPanel(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1,
+                                 float u, int32_t ts, uint32_t tick, uint32_t saveFlashUntil,
+                                 int saveSlot, int saveSucceeded) {
+    static const char* const names[] = { "RAPIDO", "SLOT 1", "SLOT 2", "SLOT 3" };
+    const float gap = 8 * u;
+    const float rowH = (y1 - y0 - 3 * gap) / 4.0f;
+    for (unsigned slot = 0; slot < 4; ++slot) {
+        float top = y0 + slot * (rowH + gap);
+        float labelRight = x0 + (x1 - x0) * 0.30f;
+        float middle = labelRight + (x1 - labelRight) * 0.50f;
+        DrawMenuButton(s, x0, top, labelRight - 3 * u, top + rowH, names[slot], 0, 0, u, ts);
+        const int savedHere = (int)slot == saveSlot && (int32_t)(saveFlashUntil - tick) > 0;
+        DrawMenuButton(s, labelRight, top, middle - 2 * u, top + rowH,
+                       savedHere ? (saveSucceeded ? "SALVO" : "ERRO") : "SALVAR", 0, 0, u, ts);
+        DrawMenuButton(s, middle + 2 * u, top, x1, top + rowH, "CARREGAR", 0, 0, u, ts);
+        AddTarget(tl, labelRight, top, middle - 2 * u, top + rowH, SS_ACT_STATE_SAVE, (uint8_t)slot);
+        AddTarget(tl, middle + 2 * u, top, x1, top + rowH, SS_ACT_STATE_LOAD, (uint8_t)slot);
+    }
+}
+
 static void PaintDeveloperOverlay(const SSurf* s, const SecondScreenSnapshot* snap, float x0, float y0,
                                   float x1, float y1, float u, int32_t ts) {
     const char* labels[8] = { "VERSION", "MODEL", "FPS NOW", "FPS AVG", "CORE1", "SCREEN", "AREA", "ROOM" };
@@ -2021,13 +2265,13 @@ static int GetVolumeStop(void) {
  * nonzero when the row should wear the red "active" chip. */
 static int GetSettingState(int row, char* out, int outCap) {
     int on = 0;
-    const char* txt = "OFF";
+    const char* txt = "DESLIGADO";
     switch (row) {
         case SS_SET_TOP_HUD:
             /* The row states what the top screen DOES: SHOW is the (red)
              * default, HIDE hands vitals duty to this panel. */
             on = !Port_Config_GetHideTopHud();
-            txt = on ? "SHOW" : "HIDE";
+            txt = on ? "MOSTRAR" : "OCULTAR";
             break;
         case SS_SET_WIDESCREEN: on = Port_Config_WidescreenEnabled(); break;
         case SS_SET_FOLLOW: on = Port_Config_GetSecondScreenFollowCam(); break;
@@ -2041,6 +2285,18 @@ static int GetSettingState(int row, char* out, int outCap) {
             snprintf(out, (size_t)outCap, "N A");
             return 0;
 #endif
+        case SS_SET_PLAYER_SPEED: {
+            static const char* const words[] = { "1X", "1.5X", "2X" };
+            unsigned mode = Port_Config_GetPlayerSpeedMode();
+            snprintf(out, (size_t)outCap, "%s", words[mode > 2 ? 0 : mode]);
+            return mode != 0;
+        }
+        case SS_SET_FAST_TEXT: on = Port_Config_GetFastText(); break;
+        case SS_SET_FAST_SWORD_CHARGE: on = Port_Config_GetFastSwordCharge(); break;
+        case SS_SET_FAST_MINISH_PORTAL: on = Port_Config_GetFastMinishPortal(); break;
+        case SS_SET_QUICK_KINSTONES: on = Port_Config_GetQuickKinstones(); break;
+        case SS_SET_QUICK_FIGURINES: on = Port_Config_GetQuickFigurines(); break;
+        case SS_SET_HEART_MAP_MARKERS: on = Port_Config_GetHeartMapMarkers(); break;
         case SS_SET_VOLUME: {
             int pct = GetVolumeStop();
             snprintf(out, (size_t)outCap, "%d", pct);
@@ -2050,6 +2306,7 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_COLOR_CORRECTION: on = Port_Config_GetColorCorrection(); break;
         case SS_SET_SHOW_FPS: on = Port_Config_GetShowFps(); break;
         case SS_SET_HOLD_ADVANCE: on = Port_Config_GetHoldToAdvanceText(); break;
+        case SS_SET_START_FILE_SELECT: on = Port_Config_GetStartAtFileSelect(); break;
         case SS_SET_RANDOMIZER: on = Port_Config_GetRandoEnabled(); break;
         case SS_SET_BACKDROP: {
             /* A cycle row like MASTER VOLUME: the value names the style and
@@ -2069,7 +2326,7 @@ static int GetSettingState(int row, char* out, int outCap) {
              * fell back to a normal launch). */
             int want = Port_Config_GetSecondScreenSwap() ? 1 : 0;
             int active = Port_SecondScreen_GameOnSecondaryDisplay();
-            snprintf(out, (size_t)outCap, "%s", want != active ? "RESTART" : (want ? "ON" : "OFF"));
+            snprintf(out, (size_t)outCap, "%s", want != active ? "REINICIAR" : (want ? "LIGADO" : "DESLIGADO"));
             return want;
         }
 #ifdef TMC_3DS
@@ -2082,7 +2339,7 @@ static int GetSettingState(int row, char* out, int outCap) {
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
-        txt = on ? "ON" : "OFF";
+        txt = on ? "LIGADO" : "DESLIGADO";
     }
     snprintf(out, (size_t)outCap, "%s", txt);
     return on;
@@ -2093,7 +2350,9 @@ static int GetSettingState(int row, char* out, int outCap) {
  * parchment, chips, font, and palette keep it native to this game. */
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                                float ry0, float rx1, float ry1, float u, int32_t ts, int page, uint32_t tick,
-                               uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult) {
+                               uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult,
+                               uint32_t stateSaveFlashUntil, int stateSaveSlot, int stateSaveSucceeded,
+                               int retroAchievementPage) {
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)rx0, (int32_t)ry0,
                                      (int32_t)(rx1 - rx0), (int32_t)(ry1 - ry0), ts);
     float inset = 6 * ts;
@@ -2111,15 +2370,18 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        static const char* const labels[4] = { "SCREEN", "GAMEPLAY", "DEVELOPER", "RANDOMIZER" };
-        static const uint8_t pages[4] = {
-            SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
+        static const char* const labels[6] = {
+            "TELA", "JOGO", "QUAL. VIDA", "CONQUISTAS", "DESENVOLVEDOR", "ALEATORIZADOR"
         };
-        const int rootRows = 4;
+        static const uint8_t pages[6] = {
+            SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_RETROACHIEVEMENTS,
+            SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
+        };
+        const int rootRows = 6;
 #else
-        static const char* const labels[3] = { "SCREEN", "GAMEPLAY", "DEVELOPER" };
-        static const uint8_t pages[3] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_DEVELOPER };
-        const int rootRows = 3;
+        static const char* const labels[4] = { "TELA", "JOGO", "QUAL. VIDA", "DESENVOLVEDOR" };
+        static const uint8_t pages[4] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_DEVELOPER };
+        const int rootRows = 4;
 #endif
         float gap = 14 * u;
         float rowH = (iy1 - y0 - (rootRows - 1) * gap) / rootRows;
@@ -2133,33 +2395,32 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
 
     if (page == SS_SETTINGS_DEVELOPER) {
         float gap = 10 * u;
-        int rowCount = 3;
+        int rowCount = 4;
 #ifdef TMC_3DS
-        rowCount = 4;
+        rowCount = 5;
 #endif
         float rowH = (iy1 - y0 - (rowCount - 1) * gap) / rowCount;
         if (rowH > 92 * u) rowH = 92 * u;
         char dumpValue[16];
         snprintf(dumpValue, sizeof(dumpValue), "%s",
-                 (int32_t)(dumpFlashUntil - tick) > 0 ? "DONE" : "WRITE");
-        DrawDeveloperActionRow(s, tl, x0, y0, x1, y0 + rowH, "MEM DUMP", dumpValue,
+                 (int32_t)(dumpFlashUntil - tick) > 0 ? "PRONTO" : "GRAVAR");
+        DrawDeveloperActionRow(s, tl, x0, y0, x1, y0 + rowH, "DUMP MEMORIA", dumpValue,
                                SS_ACT_DEVELOPER_DUMP, u, ts);
 #ifdef TMC_3DS
-        const char* loadValue = (int32_t)(loadStateFlashUntil - tick) > 0
-                                    ? Port_DumpState_ResultLabel((PortDumpStateResult)loadStateResult)
-                                    : "LOAD";
-        DrawDeveloperActionRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap, "LOAD STATE",
-                               loadValue, SS_ACT_DEVELOPER_LOAD, u, ts);
+        (void)loadStateFlashUntil;
+        (void)loadStateResult;
+        DrawDeveloperActionRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap, "SAVE STATES",
+                               "ABRIR", SS_ACT_DEVELOPER_STATES, u, ts);
         DrawSettingsValueRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "OVERLAY",
+        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap, "SOBREPOSICAO",
                            SS_SETTINGS_OVERLAY, u, ts);
 #else
         (void)loadStateFlashUntil;
         (void)loadStateResult;
         DrawSettingsValueRow(s, tl, x0, y0 + rowH + gap, x1, y0 + 2 * rowH + gap,
                              SS_SET_SHOW_FPS, u, ts);
-        DrawSettingsNavRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap, "OVERLAY",
+        DrawSettingsNavRow(s, tl, x0, y0 + 2 * (rowH + gap), x1, y0 + 3 * rowH + 2 * gap, "SOBREPOSICAO",
                            SS_SETTINGS_OVERLAY, u, ts);
 #endif
         return;
@@ -2169,6 +2430,67 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         PaintDeveloperOverlay(s, snap, x0, y0, x1, iy1, u, ts);
         return;
     }
+
+    if (page == SS_SETTINGS_STATES) {
+        PaintStateSlotsPanel(s, tl, x0, y0, x1, iy1, u, ts, tick, stateSaveFlashUntil, stateSaveSlot,
+                             stateSaveSucceeded);
+        return;
+    }
+
+#ifdef TMC_3DS
+    if (page == SS_SETTINGS_RETROACHIEVEMENTS) {
+        const char* const labels[] = { "JOGO", "CONQUISTAS", "ROM" };
+        char achievementCount[32];
+        snprintf(achievementCount, sizeof(achievementCount), "%zu DE %zu",
+                 Port_RetroAchievements_UnlockedCount(), Port_RetroAchievements_Count());
+        const char* const values[] = { "MINISH CAP", achievementCount,
+                                       Port_RetroAchievements_RomCompatibilityText() };
+        const float gap = 8 * u;
+        const float rowH = (iy1 - y0 - 5 * gap) / 6.0f;
+        for (int i = 0; i < 3; ++i) {
+            const float ry = y0 + i * (rowH + gap);
+            DrawDiagnosticRow(s, x0, ry, x1, ry + rowH, labels[i], values[i], u, ts);
+        }
+        DrawSettingsNavRow(s, tl, x0, y0 + 3 * (rowH + gap), x1, y0 + 4 * rowH + 3 * gap,
+                           "VER CONQUISTAS", SS_SETTINGS_RETRO_LIST, u, ts);
+        DrawDeveloperActionRow(s, tl, x0, y0 + 4 * (rowH + gap), x1, y0 + 5 * rowH + 4 * gap,
+                               "CONTA", Port_RetroAchievements_UserName(), SS_ACT_RETRO_LOGIN, u, ts);
+        DrawDeveloperActionRow(s, tl, x0, y0 + 5 * (rowH + gap), x1, y0 + 6 * rowH + 5 * gap,
+                               "DESCONECTAR", Port_RetroAchievements_StatusText(), SS_ACT_RETRO_LOGOUT, u, ts);
+        return;
+    }
+
+    if (page == SS_SETTINGS_RETRO_LIST) {
+        const size_t count = Port_RetroAchievements_Count();
+        const size_t perPage = 4;
+        const size_t pages = count ? (count + perPage - 1) / perPage : 1;
+        const size_t currentPage = retroAchievementPage < pages ? (size_t)retroAchievementPage : 0;
+        const float gap = 6 * u;
+        const float controlsH = 40 * u;
+        const float cardW = (x1 - x0 - gap) * 0.5f;
+        const float cardH = (iy1 - y0 - controlsH - 3 * gap) * 0.5f;
+        for (size_t i = 0; i < perPage; ++i) {
+            PortRetroAchievement achievement;
+            const size_t index = currentPage * perPage + i;
+            const float cx = x0 + (i & 1u) * (cardW + gap);
+            const float cy = y0 + (i >> 1u) * (cardH + gap);
+            if (Port_RetroAchievements_Get(index, &achievement)) {
+                DrawRetroAchievementCard(s, cx, cy, cx + cardW, cy + cardH, &achievement, u, ts);
+            }
+        }
+        const float controlsY = y0 + 2 * (cardH + gap);
+        const float middle = x0 + (x1 - x0) * 0.5f;
+        char pageLabel[20];
+        snprintf(pageLabel, sizeof(pageLabel), "%zu/%zu", currentPage + 1, pages);
+        DrawDeveloperActionRow(s, tl, x0, controlsY, middle - 3 * u, controlsY + controlsH,
+                               "ANTERIOR", "", SS_ACT_RETRO_PREV, u, ts);
+        DrawDeveloperActionRow(s, tl, middle + 3 * u, controlsY, x1, controlsY + controlsH,
+                               "PROXIMA", "", SS_ACT_RETRO_NEXT, u, ts);
+        MenuTextDraw(s, pageLabel, (int32_t)(middle - MenuTextWidth(pageLabel, (int32_t)(1.2f * u)) * 0.5f),
+                     (int32_t)(controlsY + 12 * u), (int32_t)(1.2f * u), SS_TEXT_RED);
+        return;
+    }
+#endif
 
     uint8_t rows[SS_SET_COUNT];
     int nRows = SettingsPageRows(page, rows);
@@ -2256,7 +2578,7 @@ void Port_SecondScreen_TestRandomizerConfirmationLayout(int32_t width, int32_t h
 #endif
 
 #ifdef TMC_3DS
-static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, int32_t ts) {
+static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, int32_t ts, int slot) {
     const LoadStateConfirmationLayout layout = ComputeLoadStateConfirmationLayout(s->w, s->h, u);
     tl->n = 0;
     Port_SecondScreenTheme_DrawPlate(s->px, s->w, s->h, s->stride, (int32_t)layout.x0,
@@ -2265,14 +2587,16 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
 
     int32_t titleScale = (int32_t)(2.2f * u);
     if (titleScale < 1) titleScale = 1;
-    MenuTextCentered(s, "LOAD LATEST DUMP?", s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
+    char title[32];
+    snprintf(title, sizeof(title), slot == 0 ? "CARREGAR RAPIDO?" : "CARREGAR SLOT %d?", slot);
+    MenuTextCentered(s, title, s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
 
     static const char* const lines[] = {
-        "THE LATEST DUMP IN THE",
-        "DUMPS FOLDER WILL REPLACE",
-        "THE CURRENT GAME STATE.",
-        "UNSAVED PROGRESS MAY BE LOST.",
-        "THE GAME WILL RESTART.",
+        "O SAVE SELECIONADO VAI",
+        "SUBSTITUIR O ESTADO",
+        "ATUAL DO JOGO.",
+        "PROGRESSO NAO SALVO",
+        "PODE SER PERDIDO.",
     };
     int32_t textScale = (int32_t)(1.55f * u);
     if (textScale < 1) textScale = 1;
@@ -2282,9 +2606,9 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
     }
 
     DrawMenuButton(s, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
-                   layout.buttonBottom, "CANCEL", 0, 0, u, ts);
+                   layout.buttonBottom, "(B) CANCELAR", 0, 0, u, ts);
     DrawMenuButton(s, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
-                   layout.buttonBottom, "LOAD", 0, 0, u, ts);
+                   layout.buttonBottom, "(A) CARREGAR", 0, 0, u, ts);
     AddTarget(tl, layout.buttonLeft, layout.buttonTop, layout.buttonMiddleLeft,
               layout.buttonBottom, SS_ACT_LOAD_CANCEL, 0);
     AddTarget(tl, layout.buttonMiddleRight, layout.buttonTop, layout.buttonRight,
@@ -2436,8 +2760,8 @@ static void DrawItemRing(const SSurf* s, const SecondScreenSnapshot* snap, Targe
  * (include/player.h). Only the lettering stand-in: once the theme can
  * stamp the real label frames this table stops being reached. */
 static const char* const kRActionWords[] = {
-    NULL,  "CANCEL", "DROP", "THROW",  "READ", "CHECK", "OPEN",
-    "SPEAK", "GRAB", "LIFT", "GROW", "SHRINK", "ROLL",
+    NULL,  "CANCELAR", "LARGAR", "JOGAR", "LER", "VER", "ABRIR",
+    "FALAR", "PEGAR", "LEVANTAR", "CRESCER", "ENCOLHER", "ROLAR",
 };
 
 /* The game's contextual R prompt, on the panel because the player may be
@@ -2739,7 +3063,7 @@ static void DrawTabButton(const SSurf* s, TargetList* tl, float x0, float y0, fl
     AddTarget(tl, x0, y0, x1, y1, SS_ACT_TAB, (uint8_t)tabId);
 }
 
-/* Bottom tab bar: [QUEST][MAP][ITEMS] + the square settings button, all
+/* Bottom tab bar: [QUEST][MAP][ITEMS][CHEATS] + the square settings button, all
  * one button family at one height. The 34u dead band underneath keeps
  * every button clear of the Android gesture zone (~30 real px). */
 static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int activeTab) {
@@ -2750,13 +3074,15 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
     float sx1 = s->w - 8 * u;
     float sx0 = sx1 - sq;
     float x0 = 8 * u, xr = sx0 - 8 * u, gap = 8 * u;
-    float bw = (xr - x0 - 2 * gap) / 3.0f;
+    float bw = (xr - x0 - 3 * gap) / 4.0f;
 
-    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "QUEST", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
-    DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, "MAP", activeTab == SS_TAB_MAP,
+    DrawTabButton(s, tl, x0, y, x0 + bw, y + bh, "MISSOES", activeTab == SS_TAB_QUEST, SS_TAB_QUEST, u, ts);
+    DrawTabButton(s, tl, x0 + bw + gap, y, x0 + 2 * bw + gap, y + bh, "MAPA", activeTab == SS_TAB_MAP,
                   SS_TAB_MAP, u, ts);
-    DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, "ITEMS",
+    DrawTabButton(s, tl, x0 + 2 * (bw + gap), y, x0 + 3 * bw + 2 * gap, y + bh, "ITENS",
                   activeTab == SS_TAB_ITEMS, SS_TAB_ITEMS, u, ts);
+    DrawTabButton(s, tl, x0 + 3 * (bw + gap), y, x0 + 4 * bw + 3 * gap, y + bh, "CHEATS",
+                  activeTab == SS_TAB_CHEATS, SS_TAB_CHEATS, u, ts);
     /* Settings keeps its cog glyph instead of a word, on the same plate —
      * an empty label, not a null one, so the art path never has to guess. */
     DrawTabButton(s, tl, sx0, y, sx1, y + bh, "", activeTab == SS_TAB_SETTINGS, SS_TAB_SETTINGS, u, ts);
@@ -2802,10 +3128,11 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
     int isDungeon = (snap->areaFlags & SECOND_SCREEN_AR_IS_DUNGEON) != 0;
 
-    int tab, armedRing, regionState, settingsPage, loadStateResult, loadConfirmActive, randoConfirmActive,
+    int tab, armedRing, regionState, settingsPage, retroAchievementPage, loadStateResult, loadConfirmActive, loadSlot, randoConfirmActive,
         randoDesired;
     int32_t regionId;
-    uint32_t dumpFlashUntil, loadStateFlashUntil;
+    int stateSaveSlot, stateSaveSucceeded;
+    uint32_t dumpFlashUntil, loadStateFlashUntil, stateSaveFlashUntil;
     UI_LOCK();
     if (isDungeon) {
         sUi.regionState = SS_REGION_OFF; /* the world map is gone; so is its zoom */
@@ -2817,10 +3144,15 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     regionState = sUi.regionState;
     regionId = sUi.regionId;
     settingsPage = sUi.settingsPage;
+    retroAchievementPage = sUi.retroAchievementPage;
     dumpFlashUntil = sUi.dumpFlashUntil;
     loadStateFlashUntil = sUi.loadStateFlashUntil;
     loadStateResult = sUi.loadStateResult;
     loadConfirmActive = sUi.loadConfirmActive;
+    loadSlot = sUi.loadSlot;
+    stateSaveFlashUntil = sUi.stateSaveFlashUntil;
+    stateSaveSlot = sUi.stateSaveSlot;
+    stateSaveSucceeded = sUi.stateSaveSucceeded;
     randoConfirmActive = sUi.randoConfirmActive;
     randoDesired = sUi.randoDesired;
     sUi.mapLive = 0; /* set again by PaintOverworld when the map is up */
@@ -2860,7 +3192,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     float tabH = 96 * u;
     float sideW = 220 * u; /* widened for the grown rings/chip; map stays dominant */
     float mx0 = 10 * u, my0 = 10 * u;
-    float mx1 = tab == SS_TAB_SETTINGS ? width - 10 * u : width - sideW - 4 * u;
+    float mx1 = (tab == SS_TAB_SETTINGS || tab == SS_TAB_CHEATS) ? width - 10 * u : width - sideW - 4 * u;
     float my1 = height - tabH - 4 * u;
 
     TargetList tl = { .n = 0 };
@@ -2871,7 +3203,10 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         PaintQuestPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, questView);
     } else if (tab == SS_TAB_SETTINGS) {
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick,
-                           dumpFlashUntil, loadStateFlashUntil, loadStateResult);
+                           dumpFlashUntil, loadStateFlashUntil, loadStateResult, stateSaveFlashUntil,
+                           stateSaveSlot, stateSaveSucceeded, retroAchievementPage);
+    } else if (tab == SS_TAB_CHEATS) {
+        PaintCheatsPanel(&s, &tl, mx0, my0, mx1, my1, u, ts);
     } else if (isDungeon) {
         PaintDungeon(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, returnCfg);
     } else {
@@ -2893,14 +3228,14 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         }
     }
 
-    if (tab != SS_TAB_SETTINGS) {
+    if (tab != SS_TAB_SETTINGS && tab != SS_TAB_CHEATS) {
         PaintSidebar(&s, snap, &tl, width - sideW + 4 * u, 10 * u, sideW - 14 * u, height - tabH - 14 * u, u,
                      ts, tick, armedRing);
     }
     PaintTabBar(&s, &tl, u, ts, tab);
 #ifdef TMC_3DS
     if (loadConfirmActive) {
-        PaintLoadStateConfirmation(&s, &tl, u, ts);
+        PaintLoadStateConfirmation(&s, &tl, u, ts, loadSlot);
     } else if (randoConfirmActive) {
         PaintRandomizerConfirmation(&s, &tl, u, ts, randoDesired);
     }
@@ -2982,8 +3317,12 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_UNLOCK();
             break;
         case SS_ACT_SETTINGS_PAGE:
+#ifdef TMC_3DS
+            if (hit.arg == SS_SETTINGS_RETRO_LIST) Port_RetroAchievements_RefreshList();
+#endif
             UI_LOCK();
             sUi.settingsPage = hit.arg;
+            if (hit.arg == SS_SETTINGS_RETRO_LIST) sUi.retroAchievementPage = 0;
             UI_UNLOCK();
             break;
         case SS_ACT_SETTINGS_BACK:
@@ -3001,6 +3340,31 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
         case SS_ACT_DEVELOPER_LOAD:
             UI_LOCK();
+            sUi.loadSlot = 0;
+            sUi.loadConfirmActive = 1;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_DEVELOPER_STATES:
+            UI_LOCK();
+            sUi.settingsPage = SS_SETTINGS_STATES;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_STATE_SAVE:
+#ifdef TMC_3DS
+            {
+                extern bool Port_DumpState3DS_SaveSlot(unsigned slot);
+                const int saved = Port_DumpState3DS_SaveSlot(hit.arg) ? 1 : 0;
+                UI_LOCK();
+                sUi.stateSaveSlot = hit.arg;
+                sUi.stateSaveSucceeded = (uint8_t)saved;
+                sUi.stateSaveFlashUntil = sUi.lastTick + 80;
+                UI_UNLOCK();
+            }
+#endif
+            break;
+        case SS_ACT_STATE_LOAD:
+            UI_LOCK();
+            sUi.loadSlot = hit.arg;
             sUi.loadConfirmActive = 1;
             UI_UNLOCK();
             break;
@@ -3012,7 +3376,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         case SS_ACT_LOAD_CONFIRM:
 #ifdef TMC_3DS
             {
-                PortDumpStateResult result = Port_DumpState3DS_LoadLatest();
+                PortDumpStateResult result = Port_DumpState3DS_LoadSlot(sUi.loadSlot);
                 UI_LOCK();
                 sUi.loadConfirmActive = 0;
                 sUi.loadStateResult = (uint8_t)result;
@@ -3063,6 +3427,34 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             Port_SecondScreenState_RequestEquip(hit.arg, slot);
             break;
         }
+        case SS_ACT_RESOURCE:
+            Port_SecondScreenState_RequestResource((SecondScreenResource)hit.arg);
+            break;
+        case SS_ACT_RETRO_LOGIN:
+#ifdef TMC_3DS
+            Port_RetroAchievements_LoginInteractive();
+#endif
+            break;
+        case SS_ACT_RETRO_LOGOUT:
+#ifdef TMC_3DS
+            Port_RetroAchievements_Logout();
+#endif
+            break;
+        case SS_ACT_RETRO_PREV:
+            UI_LOCK();
+            if (sUi.retroAchievementPage > 0) --sUi.retroAchievementPage;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_RETRO_NEXT:
+#ifdef TMC_3DS
+            {
+                const size_t pages = (Port_RetroAchievements_Count() + 3) / 4;
+                UI_LOCK();
+                if ((size_t)sUi.retroAchievementPage + 1 < pages) ++sUi.retroAchievementPage;
+                UI_UNLOCK();
+            }
+#endif
+            break;
         case SS_ACT_PLAQUE:
             UI_LOCK();
             if ((int8_t)hit.arg == sUi.playerFloorDisp) {
@@ -3115,6 +3507,27 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
 #else
                     break;
 #endif
+                case SS_SET_PLAYER_SPEED:
+                    Port_Config_SetPlayerSpeedMode((Port_Config_GetPlayerSpeedMode() + 1) % 3);
+                    break;
+                case SS_SET_FAST_TEXT:
+                    Port_Config_SetFastText(!Port_Config_GetFastText());
+                    break;
+                case SS_SET_FAST_SWORD_CHARGE:
+                    Port_Config_SetFastSwordCharge(!Port_Config_GetFastSwordCharge());
+                    break;
+                case SS_SET_FAST_MINISH_PORTAL:
+                    Port_Config_SetFastMinishPortal(!Port_Config_GetFastMinishPortal());
+                    break;
+                case SS_SET_QUICK_KINSTONES:
+                    Port_Config_SetQuickKinstones(!Port_Config_GetQuickKinstones());
+                    break;
+                case SS_SET_QUICK_FIGURINES:
+                    Port_Config_SetQuickFigurines(!Port_Config_GetQuickFigurines());
+                    break;
+                case SS_SET_HEART_MAP_MARKERS:
+                    Port_Config_SetHeartMapMarkers(!Port_Config_GetHeartMapMarkers());
+                    break;
                 case SS_SET_VOLUME: {
                     /* Cycle 0 -> 25 -> 50 -> 75 -> 100 -> 0, applied to
                      * the live mixer + persisted — the same call pair as
@@ -3149,6 +3562,11 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                 case SS_SET_HOLD_ADVANCE:
                     /* src/message.c polls the flag at every advance. */
                     Port_Config_SetHoldToAdvanceText(!Port_Config_GetHoldToAdvanceText());
+                    break;
+                case SS_SET_START_FILE_SELECT:
+                    /* A cold-boot preference: the next launch enters the
+                     * original file-select task, never a particular slot. */
+                    Port_Config_SetStartAtFileSelect(!Port_Config_GetStartAtFileSelect());
                     break;
                 case SS_SET_RANDOMIZER:
 #ifdef TMC_3DS

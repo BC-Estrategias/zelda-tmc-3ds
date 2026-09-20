@@ -36,6 +36,10 @@
 #include "subtask.h"
 #include "transitions.h"
 #include "ui.h"
+
+#ifdef PC_PORT
+#include "port/port_room_transition_profile.h"
+#endif
 #ifdef PC_PORT
 #include "port_widescreen.h"
 #endif
@@ -142,7 +146,14 @@ static void GameTask_Init(void) {
     sub_0806FD8C();
     gRoomControls.area = gRoomTransition.player_status.area_next;
     gRoomControls.room = gRoomTransition.player_status.room_next;
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_Begin(gRoomControls.area, gRoomControls.room);
+    uint64_t profileStart = Port_RoomTransitionProfile_Now();
+#endif
     LoadGfxGroups();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_AddGfx(Port_RoomTransitionProfile_Now() - profileStart);
+#endif
     gGFXSlots.unk0 = 1;
     gMain.state = GAMETASK_MAIN;
 }
@@ -168,6 +179,9 @@ static void GameTask_Main(void) {
 }
 
 static void GameMain_InitRoom(void) {
+#ifdef PC_PORT
+    uint64_t profileStart = Port_RoomTransitionProfile_Now();
+#endif
     SetInitializationPriority();
     gScreen.lcd.displayControl = DISPCNT_BG0_ON | DISPCNT_BG1_ON | DISPCNT_BG2_ON | DISPCNT_OBJ_ON | DISPCNT_OBJ_1D_MAP;
     gMain.substate = GAMEMAIN_CHANGEROOM;
@@ -176,6 +190,9 @@ static void GameMain_InitRoom(void) {
     gRoomTransition.field_0x4[1] = 0;
     MessageInitialize();
     InitRoom();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_AddRoomInit(Port_RoomTransitionProfile_Now() - profileStart);
+#endif
     InitUI(FALSE);
     InitializeEntities();
     if (!REGION_IS_EU) {
@@ -432,14 +449,27 @@ static void InitializeEntities(void) {
     InitializeCamera();
     gUpdateVisibleTiles = 1;
     LoadRoomBgm();
+#ifdef PC_PORT
+    uint64_t entityStart = Port_RoomTransitionProfile_Now();
+#endif
     SetColor(0, 0);
     LoadRoom();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_AddEntities(Port_RoomTransitionProfile_Now() - entityStart);
+    uint64_t mapVramStart = Port_RoomTransitionProfile_Now();
+#endif
     CreateZeldaFollower();
     CallRoomProp5And7();
     sub_0805329C();
     UpdateScrollVram();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_AddMapVram(Port_RoomTransitionProfile_Now() - mapVramStart);
+#endif
     sub_0805BB74(-1);
     UpdatePlayerRoomStatus();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_End();
+#endif
 }
 
 static void sub_08051D98(void) {
@@ -467,11 +497,27 @@ static void sub_08051D98(void) {
 
     sub_0804AF90();
     CallRoomProp6();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_Begin(gRoomControls.area, gRoomControls.room);
+    uint64_t gfxStart = Port_RoomTransitionProfile_Now();
+#endif
     LoadRoomGfx();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_AddGfx(Port_RoomTransitionProfile_Now() - gfxStart);
+#endif
     LoadRoomBgm();
+#ifdef PC_PORT
+    uint64_t entityStart = Port_RoomTransitionProfile_Now();
+#endif
     LoadRoom();
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_AddEntities(Port_RoomTransitionProfile_Now() - entityStart);
+#endif
     CallRoomProp5And7();
     SetPlayerControl(1);
+#ifdef PC_PORT
+    Port_RoomTransitionProfile_End();
+#endif
 }
 
 static void sub_08051DCC(void) {

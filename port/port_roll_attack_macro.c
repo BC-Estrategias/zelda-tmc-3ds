@@ -70,6 +70,28 @@ static uint8_t BestOwnedSword(void) {
     return 0;
 }
 
+/* Y is intended to be a one-button shortcut. When the Circle Pad/D-pad is
+ * neutral, use Link's current facing direction instead of rejecting the
+ * shortcut outright. A held direction still always takes precedence. */
+static uint16_t DirectionMaskFromFacing(u8 direction) {
+    switch (direction & DirectionNorthWest) {
+        case DirectionNorth:
+        case DirectionNorthEast:
+        case DirectionNorthWest:
+            return DPAD_UP;
+        case DirectionEast:
+        case DirectionSouthEast:
+            return DPAD_RIGHT;
+        case DirectionSouth:
+        case DirectionSouthWest:
+            return DPAD_DOWN;
+        case DirectionWest:
+            return DPAD_LEFT;
+        default:
+            return 0;
+    }
+}
+
 static uint16_t ResolveDirectionMask(void) {
     uint16_t mask = 0;
 
@@ -88,19 +110,16 @@ static uint16_t ResolveDirectionMask(void) {
     }
 
     float sx = 0.f, sy = 0.f;
-    if (!Port_Config_GetLeftStick(&sx, &sy)) {
-        return 0;
+    if (Port_Config_GetLeftStick(&sx, &sy)) {
+        const float dz = Port_Config_GetAnalogDeadzone();
+        if ((sx * sx + sy * sy) >= dz * dz) {
+            if (fabsf(sx) >= fabsf(sy)) {
+                return (sx < 0.f) ? DPAD_LEFT : DPAD_RIGHT;
+            }
+            return (sy < 0.f) ? DPAD_UP : DPAD_DOWN;
+        }
     }
-
-    const float dz = Port_Config_GetAnalogDeadzone();
-    if ((sx * sx + sy * sy) < dz * dz) {
-        return 0;
-    }
-
-    if (fabsf(sx) >= fabsf(sy)) {
-        return (sx < 0.f) ? DPAD_LEFT : DPAD_RIGHT;
-    }
-    return (sy < 0.f) ? DPAD_UP : DPAD_DOWN;
+    return DirectionMaskFromFacing(gPlayerEntity.base.direction);
 }
 
 static bool CanStartMacro(void) {

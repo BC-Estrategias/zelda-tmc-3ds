@@ -10,7 +10,11 @@ extern "C" {
 typedef enum Port3DSFullViewMode {
     PORT_3DS_FULL_VIEW_FALLBACK = 0,
     PORT_3DS_FULL_VIEW_OUTDOOR_1X,
-    PORT_3DS_FULL_VIEW_INTERIOR_2X,
+    /* A room may be indoors yet have enough real map content for the same
+     * 400x240 camera as an outdoor area.  Keep this distinct in diagnostics
+     * and policy, although its renderer geometry is intentionally identical
+     * to OUTDOOR_1X. */
+    PORT_3DS_FULL_VIEW_INTERIOR_1X,
 } Port3DSFullViewMode;
 
 typedef enum Port3DSFullViewFallbackReason {
@@ -78,10 +82,9 @@ typedef struct Port3DSFullViewPresentation {
     int outputHeight;
 } Port3DSFullViewPresentation;
 
-/* BG0 stores the key/rupee widgets in a 32x32 tilemap. Outdoor Full View
- * moves them ten rows down and lets the renderer keep their right edge
- * anchored. The 200x120 interior viewport moves them five rows and five
- * columns up/left so the complete widgets remain inside the logical frame. */
+/* BG0 stores the key/rupee widgets in a 32x32 tilemap. Every real Full View
+ * camera moves them ten rows down and lets the renderer keep their right
+ * edge anchored. */
 static inline int Port3DSFullViewPolicy_HudTilemapOffset(int viewWidth, int viewHeight) {
     const int rowTiles = (viewHeight - 160) / 8;
     const int columnTiles = viewWidth < 240 ? (viewWidth - 240) / 8 : 0;
@@ -124,8 +127,8 @@ static inline int Port3DSFullViewPolicy_ParallaxOffset(int scrollDelta,
 /* Resolve texture UV/output geometry without trusting the caller. Invalid
  * experimental requests return FALLBACK and the established E2 240/266x160
  * source geometry, so a torn transition can never address outside the top
- * upload texture. Interior 2x is a real 200x120 engine viewport, never a crop
- * of a composed 240/266x160 frame (which would cut or move the HUD). */
+ * upload texture. Both Full View modes use a real 400x240 engine viewport;
+ * a small interior falls back instead of zooming a 200x120 game camera. */
 Port3DSFullViewMode Port3DSFullViewPolicy_ResolvePresentation(
     Port3DSFullViewMode requested, int renderWidth, int renderHeight,
     int validSourceWidth, int validSourceHeight,

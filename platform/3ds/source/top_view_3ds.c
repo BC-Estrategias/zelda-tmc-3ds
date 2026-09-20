@@ -9,7 +9,8 @@ TopView3DSPpuCoherence TopView3DS_ResolvePpuCoherence(
         .forceNativeFrame = 0,
         .clearFullViewProducer = 0,
     };
-    const int selectedFullView = selectedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+    const int selectedFullView = selectedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+                                 selectedMode == PORT_3DS_FULL_VIEW_INTERIOR_1X;
     if (selectedFullView == (producerFullView != 0)) {
         return result;
     }
@@ -47,10 +48,15 @@ void TopView3DS_BuildPlan(int old3DS, int fullViewComboEnabled,
     if (result.mode != PORT_3DS_FULL_VIEW_FALLBACK) {
         result.drawWidth = 400;
         result.drawHeight = 240;
-    } else if (displayStyle == TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT) {
+    } else if (displayStyle == TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT &&
+               (old3DS || !fullViewComboEnabled)) {
         result.drawWidth = result.source.sourceWidth;
         result.drawHeight = result.source.sourceHeight;
     } else {
+        /* Full View users chose the expanded presentation. Native-canvas
+         * screens (pause, map, title and file select) cannot safely become a
+         * 400x240 logical framebuffer, but they can be scaled by the GPU to
+         * the physical screen while retaining their 3:2 aspect ratio. */
         result.drawHeight = 240;
         switch (aspect) {
             case TOP_VIEW_3DS_ASPECT_STRETCH:

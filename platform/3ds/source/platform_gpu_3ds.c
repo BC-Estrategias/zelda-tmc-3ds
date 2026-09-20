@@ -1,10 +1,12 @@
 #include "platform_gpu_3ds.h"
 #include "top_view_3ds.h"
+#include "port_retroachievements.h"
 
 #include <3ds.h>
 #include <citro2d.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static C3D_RenderTarget* sTopTarget;
@@ -12,12 +14,16 @@ static C3D_RenderTarget* sBottomTarget;
 static C3D_Tex sTopTexture;
 static C3D_Tex sBottomTexture;
 static C3D_Tex sSharpBilinearTexture;
+static C3D_Tex sRetroBadgeTexture;
 static C3D_RenderTarget* sSharpBilinearTarget;
 static Tex3DS_SubTexture sTopSubtexture;
 static Tex3DS_SubTexture sSharpBilinearSubtexture;
 static Tex3DS_SubTexture sBottomSubtexture;
 static uint32_t* sTopUpload;
 static uint32_t* sBottomUploads[2];
+static uint32_t* sRetroBadgeUpload;
+static bool sRetroBadgeReady;
+static char sRetroBadgeName[32];
 static void* sC2dFlushBase;
 static size_t sC2dFlushSize;
 static bool sFrameActive;
@@ -53,6 +59,11 @@ extern int Port_Config_Get3DSDisplayStyle(void);
 extern bool Port_Config_3DSFullViewComboEnabled(void);
 extern double Port_PPU_3DS_CurrentFps(void);
 
+static void ConfigureAbgrTextureEnv(void);
+static void ConfigureIdentityTextureEnv(void);
+static u32 TextureTransfer(void);
+static void LoadRetroBadgeTexture(const char* badgeName);
+
 static const uint8_t* StatusGlyph(char c) {
     static const uint8_t digits[10][7] = {
         { 14, 17, 19, 21, 25, 17, 14 }, { 4, 12, 4, 4, 4, 4, 14 },
@@ -61,20 +72,26 @@ static const uint8_t* StatusGlyph(char c) {
         { 14, 16, 16, 30, 17, 17, 14 }, { 31, 1, 2, 4, 8, 8, 8 },
         { 14, 17, 17, 14, 17, 17, 14 }, { 14, 17, 17, 15, 1, 1, 14 },
     };
-    static const uint8_t letters[9][7] = {
+    static const uint8_t letters[15][7] = {
         { 14, 17, 17, 31, 17, 17, 17 }, /* A */
+        { 14, 17, 16, 16, 16, 17, 14 }, /* C */
         { 30, 17, 17, 17, 17, 17, 30 }, /* D */
         { 31, 16, 16, 30, 16, 16, 31 }, /* E */
         { 31, 16, 16, 30, 16, 16, 16 }, /* F */
+        { 31, 4, 4, 4, 4, 4, 31 },      /* I */
         { 17, 27, 21, 21, 17, 17, 17 }, /* M */
+        { 17, 25, 21, 19, 17, 17, 17 }, /* N */
+        { 14, 17, 17, 17, 17, 17, 14 }, /* O */
         { 30, 17, 17, 30, 16, 16, 16 }, /* P */
+        { 14, 17, 17, 17, 21, 18, 13 }, /* Q */
         { 15, 16, 16, 14, 1, 1, 30 },   /* S */
+        { 31, 4, 4, 4, 4, 4, 4 },       /* T */
         { 17, 17, 17, 17, 17, 17, 14 }, /* U */
         { 17, 17, 17, 17, 17, 10, 4 },  /* V */
     };
     static const uint8_t letterIds[26] = {
-        0, 255, 255, 1, 2, 3, 255, 255, 255, 255, 255, 255, 4,
-        255, 255, 5, 255, 255, 6, 255, 7, 8, 255, 255, 255, 255,
+        0, 255, 1, 2, 3, 4, 255, 255, 5, 255, 255, 255, 6,
+        7, 8, 9, 10, 255, 11, 12, 13, 14, 255, 255, 255, 255,
     };
     if (c >= '0' && c <= '9') return digits[c - '0'];
     if (c >= 'A' && c <= 'Z') {
@@ -103,6 +120,69 @@ static void DrawStatusText(float x, float y, float scale, const char* text) {
             }
         }
     }
+}
+
+/* RetroAchievements supplies events from its client runtime. The renderer
+ * turns them into a short, non-blocking on-screen confirmation; it does not
+ * fabricate or submit achievements itself. */
+static void DrawRetroAchievementPopup(void) {
+    static uint32_t seenGeneration;
+    static PortRetroPopup popup;
+    static uint64_t expiresAt;
+    static char badgeName[32];
+    const uint32_t generation = Port_RetroAchievements_PopupGeneration();
+    if (generation != 0 && generation != seenGeneration) {
+        seenGeneration = generation;
+        popup = Port_RetroAchievements_PopupState();
+        Port_RetroAchievements_PopupBadgeName(badgeName, sizeof(badgeName));
+        LoadRetroBadgeTexture(badgeName);
+        expiresAt = osGetTime() + 2400u;
+    }
+    if (popup == PORT_RETRO_POPUP_NONE || osGetTime() >= expiresAt) return;
+    /* The cache worker may finish shortly after the unlock event. Retry the
+     * local file during the short popup lifetime; this is disk-only and lets
+     * the icon appear without another achievement or another HTTP request. */
+    if (popup == PORT_RETRO_POPUP_ACHIEVEMENT_DETECTED)
+        LoadRetroBadgeTexture(badgeName);
+
+    const char* status = "DETECTADA";
+    if (popup == PORT_RETRO_POPUP_SUBMISSION_PENDING) status = "PENDENTE";
+    if (popup == PORT_RETRO_POPUP_SUBMISSION_COMPLETE) status = "ENVIADA";
+    C2D_DrawRectSolid(214.0f, 10.0f, 0.7f, 176.0f, 42.0f, C2D_Color32(10, 10, 16, 225));
+    C2D_DrawRectSolid(214.0f, 10.0f, 0.69f, 4.0f, 42.0f, C2D_Color32(230, 180, 45, 255));
+    if (popup == PORT_RETRO_POPUP_ACHIEVEMENT_DETECTED && sRetroBadgeReady &&
+        strcmp(sRetroBadgeName, badgeName) == 0) {
+        static const Tex3DS_SubTexture badgeSubtexture = { 64, 64, 0.0f, 1.0f, 1.0f, 0.0f };
+        const C2D_Image badge = { .tex = &sRetroBadgeTexture, .subtex = &badgeSubtexture };
+        const C2D_DrawParams badgeParams = {
+            .pos = { .x = 220.0f, .y = 14.0f, .w = 32.0f, .h = 32.0f },
+            .center = { 0.0f, 0.0f }, .depth = 0.68f, .angle = 0.0f,
+        };
+        ConfigureIdentityTextureEnv();
+        C2D_DrawImage(badge, &badgeParams, NULL);
+        ConfigureAbgrTextureEnv();
+        DrawStatusText(256.0f, 16.0f, 1.55f, "CONQUISTA");
+        DrawStatusText(256.0f, 30.0f, 1.35f, status);
+    } else {
+        DrawStatusText(226.0f, 16.0f, 1.55f, "CONQUISTA");
+        DrawStatusText(226.0f, 30.0f, 1.35f, status);
+    }
+}
+
+static void LoadRetroBadgeTexture(const char* badgeName) {
+    char path[96];
+    FILE* file;
+    if (!sRetroBadgeReady || !badgeName || !badgeName[0] || strcmp(sRetroBadgeName, badgeName) == 0) return;
+    snprintf(path, sizeof(path), "ra_badges/%s.rgba", badgeName);
+    file = fopen(path, "rb");
+    if (!file) return;
+    if (fread(sRetroBadgeUpload, 1, 64 * 64 * sizeof(uint32_t), file) == 64 * 64 * sizeof(uint32_t)) {
+        GSPGPU_FlushDataCache(sRetroBadgeUpload, 64 * 64 * sizeof(uint32_t));
+        C3D_SyncDisplayTransfer(sRetroBadgeUpload, GX_BUFFER_DIM(64, 64),
+                                (u32*)sRetroBadgeTexture.data, GX_BUFFER_DIM(64, 64), TextureTransfer());
+        snprintf(sRetroBadgeName, sizeof(sRetroBadgeName), "%s", badgeName);
+    }
+    fclose(file);
 }
 
 static u32 TextureTransfer(void) {
@@ -174,16 +254,20 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     memset(&sStats, 0, sizeof(sStats));
     sOld3DSProfile = old3dsProfile;
     sBottomTargetValid = false;
+    sRetroBadgeReady = false;
+    sRetroBadgeName[0] = '\0';
     sSharpBilinearTarget = NULL;
     sC2dFlushBase = NULL;
     sC2dFlushSize = 0;
     sTopUpload = (uint32_t*)linearMemAlign(TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t), 0x80);
     sBottomUploads[0] = (uint32_t*)linearMemAlign(512u * 256u * sizeof(uint32_t), 0x80);
     sBottomUploads[1] = (uint32_t*)linearMemAlign(512u * 256u * sizeof(uint32_t), 0x80);
-    if (!sTopUpload || !sBottomUploads[0] || !sBottomUploads[1]) goto fail_linear;
+    sRetroBadgeUpload = (uint32_t*)linearMemAlign(64u * 64u * sizeof(uint32_t), 0x80);
+    if (!sTopUpload || !sBottomUploads[0] || !sBottomUploads[1] || !sRetroBadgeUpload) goto fail_linear;
     memset(sTopUpload, 0, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
     memset(sBottomUploads[0], 0, 512u * 256u * sizeof(uint32_t));
     memset(sBottomUploads[1], 0, 512u * 256u * sizeof(uint32_t));
+    memset(sRetroBadgeUpload, 0, 64u * 64u * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sTopUpload, TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[0], 512u * 256u * sizeof(uint32_t));
     GSPGPU_FlushDataCache(sBottomUploads[1], 512u * 256u * sizeof(uint32_t));
@@ -216,6 +300,11 @@ bool PlatformGpu3DS_Init(bool old3dsProfile) {
     sStats.bottomUploadAddress[1] = (uintptr_t)sBottomUploads[1];
     if (!C3D_TexInitVRAM(&sTopTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) goto fail;
     if (!C3D_TexInitVRAM(&sBottomTexture, 512, 256, GPU_RGBA8)) goto fail_top_texture;
+    sRetroBadgeReady = C3D_TexInitVRAM(&sRetroBadgeTexture, 64, 64, GPU_RGBA8);
+    if (sRetroBadgeReady) {
+        C3D_TexSetFilter(&sRetroBadgeTexture, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sRetroBadgeTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    }
     C3D_TexSetFilter(&sTopTexture, GPU_NEAREST, GPU_NEAREST);
     /* The complete 320x240 compositor (map, HUD and menus) shares this
      * texture, so linear filtering here makes bilinear presentation the
@@ -276,10 +365,12 @@ fail:
 fail_linear:
     if (sBottomUploads[1]) linearFree(sBottomUploads[1]);
     if (sBottomUploads[0]) linearFree(sBottomUploads[0]);
+    if (sRetroBadgeUpload) linearFree(sRetroBadgeUpload);
     if (sTopUpload) linearFree(sTopUpload);
     sBottomUploads[0] = NULL;
     sBottomUploads[1] = NULL;
     sTopUpload = NULL;
+    sRetroBadgeUpload = NULL;
     return false;
 }
 
@@ -293,11 +384,12 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
                          Port3DSFullViewMode requestedMode, int cropX, int cropY) {
     const int style = Port_Config_Get3DSDisplayStyle();
     TopView3DSPlan plan;
-    /* `requestedMode` is latched with the IO/OAM generation. A settings
-     * change can occur after that generation was produced; do not reinterpret
-     * its final experimental frame through the new live combo state. */
+    /* The selected mode is latched with the IO/OAM generation. The Full View
+     * setting itself also controls the presentation of native-canvas screens:
+     * pause/map/title/file-select frames remain logically 240x160 but are
+     * enlarged by the GPU. This never changes their source geometry. */
     TopView3DS_BuildPlan(sOld3DSProfile,
-                         requestedMode != PORT_3DS_FULL_VIEW_FALLBACK,
+                         Port_Config_3DSFullViewComboEnabled(),
                          Port_Config_Get3DSAspectRatio(), style, requestedMode,
                          (int)width, (int)height, (int)validSourceWidth,
                          (int)validSourceHeight, cropX, cropY, &plan);
@@ -447,6 +539,7 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         ConfigureAbgrTextureEnv();
         if (plan.useSharpBilinear) ++sStats.sharpBilinearFallbacks;
     }
+    DrawRetroAchievementPopup();
     if (Port_Config_GetShowFps()) {
         char label[20];
         double fps = Port_PPU_3DS_CurrentFps();
@@ -519,10 +612,19 @@ bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
 
 void PlatformGpu3DS_ShowDumpSavedOverlay(void) {
     if (!sReady || !sTopUpload || !sBottomUploads[0] || !C3D_FrameBegin(0)) return;
+    /* Citro3D state is global. Start the dump overlay with a known, unclipped
+     * 2D batch so a previous render pass can never crop its text or leave an
+     * unexpected blend mode behind. This is deliberately independent of the
+     * Full View renderer and applies on both 3DS models. */
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
     sFrameActive = true;
     DrawTopImage(sTopUpload, sTopPresentWidth, sTopPresentHeight,
                  sTopValidSourceWidth, sTopValidSourceHeight,
                  sTopPresentMode, sTopCropX, sTopCropY);
+    C2D_Prepare();
+    C2D_SceneBegin(sTopTarget);
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+    ConfigureStandardAlphaBlend();
     C2D_DrawRectSolid(132.0f, 12.0f, 0.7f, 136.0f, 24.0f, C2D_Color32(0, 0, 0, 220));
     DrawStatusText(141.0f, 17.0f, 2.0f, "DUMP SAVED");
 
@@ -576,6 +678,7 @@ void PlatformGpu3DS_Shutdown(void) {
     C3D_RenderTargetDelete(sTopTarget);
     if (sSharpBilinearTarget) C3D_RenderTargetDelete(sSharpBilinearTarget);
     if (sStats.sharpBilinearAvailable) C3D_TexDelete(&sSharpBilinearTexture);
+    if (sRetroBadgeReady) C3D_TexDelete(&sRetroBadgeTexture);
     C3D_TexDelete(&sBottomTexture);
     C3D_TexDelete(&sTopTexture);
     C2D_Fini();
@@ -583,9 +686,13 @@ void PlatformGpu3DS_Shutdown(void) {
     linearFree(sBottomUploads[1]);
     linearFree(sBottomUploads[0]);
     linearFree(sTopUpload);
+    linearFree(sRetroBadgeUpload);
     sBottomUploads[0] = NULL;
     sBottomUploads[1] = NULL;
     sTopUpload = NULL;
+    sRetroBadgeUpload = NULL;
+    sRetroBadgeReady = false;
+    sRetroBadgeName[0] = '\0';
     sC2dFlushBase = NULL;
     sC2dFlushSize = 0;
     sFrameActive = false;

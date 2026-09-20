@@ -19,6 +19,7 @@
 #include "sound.h"
 #ifdef PC_PORT
 #include "../port/port_tts.h"
+#include "../port/port_runtime_config.h"
 #endif
 
 extern void FlushSprites(void);
@@ -148,6 +149,15 @@ void TitleTask(void) {
     switch (gMain.state) {
         case 0:
             MessageInitialize();
+#ifdef PC_PORT
+            /* This uses the stock file-select task, including all its own
+             * initialization and save validation. It is a boot shortcut,
+             * not an automatic resume. */
+            if (Port_Config_GetStartAtFileSelect()) {
+                SetTask(TASK_FILE_SELECT);
+                break;
+            }
+#endif
             MemClear(&gUI, sizeof(gUI));
             AdvanceIntroSequence(0);
             break;
@@ -166,6 +176,17 @@ void TitleTask(void) {
 }
 
 static void HandleNintendoCapcomLogos(void) {
+#ifdef TMC_3DS
+    /* The 3DS build already has its own brief boot splash.  Do not spend a
+     * second display phase on the original Capcom card: advance through the
+     * normal title-state transition so the game still initializes its title
+     * graphics and palette exactly once.  The logo handler normally enables
+     * title input immediately before this transition, so preserve that side
+     * effect or the Press Start screen cannot accept A/Start. */
+    gUnk_02000010.listenForKeyPresses = 1;
+    AdvanceIntroSequence(1);
+    return;
+#else
     u32 advance;
     u32 paletteGroup;
 
@@ -197,6 +218,7 @@ static void HandleNintendoCapcomLogos(void) {
         gUnk_02000010.listenForKeyPresses = 1;
         AdvanceIntroSequence(1);
     }
+#endif
 }
 
 static void HandleTitlescreen(void) {

@@ -19,16 +19,22 @@
 #endif
 
 #include "area.h"
+#include "common.h"
+#include "entity.h"
+#include "flags.h"
 #include "game.h"
 #include "item.h"
 #include "itemMetaData.h"
+#include "kinstone.h"
 #include "main.h"
 #include "player.h"
 #include "room.h"
 #include "save.h"
 #include "subtask.h" /* sub_080A6F40 — the map screens' hint-visibility word */
 #include "ui.h"
+#include "object.h"
 #include "port_runtime_config.h"
+#include "rando/rando.h"
 
 /* The HUD's per-language button-label frame offsets (data/const/ui.s),
  * declared exactly as src/ui.c declares them. */
@@ -47,6 +53,54 @@ static SNAPSHOT_MUTEX_TYPE sSnapshotMutex = SNAPSHOT_MUTEX_INITIALIZER;
  * discipline, never held across engine calls. */
 static uint8_t sPendingEquipItem = 0;
 static uint8_t sPendingEquipSlot = 0;
+static SecondScreenResource sPendingResource = SECOND_SCREEN_RESOURCE_NONE;
+
+/* Story-golden Kinstones are bag types 0x65..0x6d, not fusion ids 1..9.
+ * Each gold shape is shared by one or two of the first nine story fusions.
+ * A gold piece remains useful while at least one matching fusion is pending;
+ * otherwise it must disappear instead of becoming a stack of 99. */
+static bool GoldenKinstoneStillNeeded(uint8_t type) {
+    switch (type) {
+        case 0x65: return !CheckKinstoneFused(1);
+        case 0x66:
+        case 0x69: return !CheckKinstoneFused(2) || !CheckKinstoneFused(5);
+        case 0x67:
+        case 0x68: return !CheckKinstoneFused(3) || !CheckKinstoneFused(4);
+        case 0x6a: return !CheckKinstoneFused(6);
+        case 0x6b: return !CheckKinstoneFused(7);
+        case 0x6c: return !CheckKinstoneFused(8);
+        case 0x6d: return !CheckKinstoneFused(9);
+        default: return false;
+    }
+}
+
+static void RefillKinstoneBagSafely(void) {
+    KinstoneSave* bag = &gSave.kinstones;
+    uint32_t write = 0;
+
+    for (uint32_t read = 0; read < 19; read++) {
+        const uint8_t type = bag->types[read];
+        uint8_t amount = bag->amounts[read];
+        if (type == KINSTONE_NONE || amount == 0) continue;
+
+        if (type >= 0x65 && type <= 0x6d) {
+            if (!GoldenKinstoneStillNeeded(type)) continue;
+            amount = 1;
+        } else {
+            amount = 99;
+        }
+
+        bag->types[write] = type;
+        bag->amounts[write] = amount;
+        write++;
+    }
+
+    while (write < 19) {
+        bag->types[write] = KINSTONE_NONE;
+        bag->amounts[write] = 0;
+        write++;
+    }
+}
 
 /* Port-side automap: which rooms of each area have been entered this
  * session. TMC's own per-room "visited" state is scattered across
@@ -54,6 +108,162 @@ static uint8_t sPendingEquipSlot = 0;
  * port tracks it directly — same approach as zelda3-android's visited-room
  * dungeon map. Game-thread only. */
 static uint64_t sVisitedByArea[256];
+
+typedef struct {
+    uint8_t area;
+    uint16_t flag;
+    int16_t x;
+    int16_t y;
+} HeartMapLocation;
+
+/* Build a world-map locator from the ROM's room entity lists.  Unlike
+ * the live-object attempt, this sees heart pieces before Link enters their
+ * room.  ItemOnGround receives its permanent collection flag from the high
+ * half of EntityData.spritePtr (RegisterRoomEntity). */
+static HeartMapLocation sHeartMapLocations[SECOND_SCREEN_HEART_MARKERS];
+static uint8_t sHeartMapLocationCount;
+static bool sHeartMapScanned;
+
+static void AddHeartMapLocations(uint32_t area, const RoomHeader* header,
+                                 const EntityData* data) {
+    for (uint32_t n = 0; data != NULL && n < 192 && data[n].kind != 0xff; n++) {
+        const EntityData* e = &data[n];
+        const uint16_t flag = (uint16_t)(e->spritePtr >> 16);
+        if ((e->kind & 0x0f) != OBJECT || e->id != GROUND_ITEM ||
+            e->type != ITEM_HEART_PIECE || flag == 0) {
+            continue;
+        }
+
+        /* A room can expose the same list through both properties.  Keep a
+         * single pin in that case, but do not discard property 0 outright:
+         * the normal room loader consumes both property 1 and property 0,
+         * and several real overworld heart pieces live in the latter. */
+        /* Reject an EntityData-shaped value from a non-entity property list.
+         * A real placed item must sit within its room's pixel rectangle. */
+        if (e->xPos >= header->pixel_width || e->yPos >= header->pixel_height) {
+            continue;
+        }
+
+        /* Both values are already in world pixels. SetWorldMapPos() uses
+         * exactly header->map_x + local_x for the game's own map cursor.
+         * Shifting map_x/map_y here wrapped large overworld coordinates and
+         * produced pins in unrelated regions. */
+        const int16_t x = (int16_t)((int32_t)header->map_x + e->xPos);
+        const int16_t y = (int16_t)((int32_t)header->map_y + e->yPos);
+        bool duplicate = false;
+        for (uint32_t i = 0; i < sHeartMapLocationCount; i++) {
+            const HeartMapLocation* prior = &sHeartMapLocations[i];
+            if (prior->area == area && prior->flag == flag &&
+                prior->x == x && prior->y == y) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate && sHeartMapLocationCount < SECOND_SCREEN_HEART_MARKERS) {
+            HeartMapLocation* out = &sHeartMapLocations[sHeartMapLocationCount++];
+            out->area = (uint8_t)area;
+            out->flag = flag;
+            out->x = x;
+            out->y = y;
+        }
+    }
+}
+
+/* EntityData.spritePtr's upper half becomes ItemOnGroundEntity.flag.  It is
+ * an encoded CheckFlags value, not invariably a local-flag ordinal.  The
+ * scanner must therefore decode it using the source area's bank rather than
+ * applying the current area's local-bank shortcut.  Room flags are volatile
+ * by definition, so they cannot honestly power a persistent world-map hint. */
+static bool HeartMapLocationWasCollected(const HeartMapLocation* heart) {
+    const uint32_t flag = heart->flag;
+    const uint32_t index = flag & 0x3ffu;
+    const uint32_t type = (flag >> 14) & 3u;
+    const uint8_t bank = gAreaMetadata[heart->area].flag_bank;
+
+    switch (type) {
+        case 0: /* local flag in the area that owns the item */
+            /* The location tables are authored against the USA ROM.  A
+             * translated ROM keeps the same gameplay flags but may move the
+             * local-flag ordinals; use the region-aware reader just like the
+             * item scripts do. */
+            return bank <= LOCAL_BANK_12 && CheckLocalFlagByBankB(gLocalFlagBanks[bank], index);
+        case 1: /* global flag */
+            return CheckGlobalFlag(index);
+        case 2: /* room flag: not saved outside the currently loaded room */
+            return true;
+        default:
+            return true;
+    }
+}
+
+static void BuildHeartMapLocations(void) {
+    if (sHeartMapScanned || gRomData == NULL || gAreaRoomHeaders == NULL) return;
+    for (uint32_t area = 0; area < 153 && sHeartMapLocationCount < SECOND_SCREEN_HEART_MARKERS; area++) {
+        const RoomHeader* headers;
+        /* This is intentionally not limited to AR_IS_OVERWORLD: most of the
+         * canonical 44 live in caves, houses or dungeons.  The publisher
+         * below filters world-map pins; the diagnostic must see all of them. */
+        headers = gAreaRoomHeaders[area];
+        if (headers == NULL) continue;
+        for (uint32_t room = 0; room < MAX_ROOMS && headers[room].map_x != 0xffffu &&
+                             sHeartMapLocationCount < SECOND_SCREEN_HEART_MARKERS; room++) {
+            /* The normal room loader consumes both lists.  Heart pieces in
+             * either one must be discoverable before Link visits the room. */
+            AddHeartMapLocations(area, &headers[room],
+                                 (const EntityData*)GetRoomProperty(area, room, 1));
+            if (sHeartMapLocationCount < SECOND_SCREEN_HEART_MARKERS) {
+                AddHeartMapLocations(area, &headers[room],
+                                     (const EntityData*)GetRoomProperty(area, room, 0));
+            }
+        }
+    }
+    sHeartMapScanned = true;
+}
+
+static void PublishOutdoorHeartMarkers(SecondScreenSnapshot* next) {
+    BuildHeartMapLocations();
+    if (next == NULL || !Port_Config_GetHeartMapMarkers()) return;
+    for (uint32_t i = 0; i < sHeartMapLocationCount && next->heartMarkerCount < SECOND_SCREEN_HEART_MARKERS; i++) {
+        const HeartMapLocation* heart = &sHeartMapLocations[i];
+        /* Interior and dungeon coordinates belong to their own maps.  Do not
+         * project them onto the overworld parchment: that was the source of
+         * the seemingly random hearts the player reported. */
+        if ((gAreaMetadata[heart->area].flags & AR_IS_OVERWORLD) == 0) continue;
+        if (HeartMapLocationWasCollected(heart)) continue;
+        next->heartMarkerArea[next->heartMarkerCount] = heart->area;
+        next->heartMarkerX[next->heartMarkerCount] = heart->x;
+        next->heartMarkerY[next->heartMarkerCount] = heart->y;
+        next->heartMarkerCount++;
+    }
+}
+
+unsigned Port_SecondScreenState_GetMissingHeartPieces(PortHeartMapReportEntry* entries,
+                                                       unsigned capacity) {
+    unsigned count = 0;
+
+    /* Do not use the randomizer's USA location-key catalog as a completion
+     * oracle here. Text-patched base-USA ROMs may relocate local flag
+     * ordinals without changing their game code, making that catalog report
+     * already-collected chest rewards as missing. The room entity data is
+     * loaded from the active ROM and carries the collection flag actually
+     * used by each placed heart, so it is the safe source for a player-facing
+     * PT-BR diagnostic. */
+    BuildHeartMapLocations();
+    for (uint32_t i = 0; i < sHeartMapLocationCount; ++i) {
+        const HeartMapLocation* heart = &sHeartMapLocations[i];
+        if (HeartMapLocationWasCollected(heart)) continue;
+        if (entries != NULL && count < capacity) {
+            entries[count].area = heart->area;
+            entries[count].flag = heart->flag;
+            entries[count].x = heart->x;
+            entries[count].y = heart->y;
+            entries[count].name = "Placed heart piece";
+            entries[count].source = 2;
+        }
+        ++count;
+    }
+    return count;
+}
 
 void Port_SecondScreenState_Publish(void) {
     /* Assembled outside the lock: this runs on the game thread itself, the
@@ -67,10 +277,13 @@ void Port_SecondScreenState_Publish(void) {
 
     uint8_t equipItem;
     uint8_t equipSlot;
+    SecondScreenResource resource;
     SNAPSHOT_MUTEX_LOCK(&sSnapshotMutex);
     equipItem = sPendingEquipItem;
     equipSlot = sPendingEquipSlot;
+    resource = sPendingResource;
     sPendingEquipItem = 0;
+    sPendingResource = SECOND_SCREEN_RESOURCE_NONE;
     SNAPSHOT_MUTEX_UNLOCK(&sSnapshotMutex);
 
     next.inGame = gMain.task == TASK_GAME;
@@ -81,6 +294,33 @@ void Port_SecondScreenState_Publish(void) {
          * doesn't own. */
         if (equipItem != 0 && GetInventoryValue(equipItem) == 1) {
             ForceEquipItem(equipItem, equipSlot ? EQUIP_SLOT_B : EQUIP_SLOT_A);
+        }
+
+        switch (resource) {
+            case SECOND_SCREEN_RESOURCE_HEARTS:
+                gSave.stats.health = gSave.stats.maxHealth;
+                break;
+            case SECOND_SCREEN_RESOURCE_RUPEES:
+                gSave.stats.rupees = 999;
+                break;
+            case SECOND_SCREEN_RESOURCE_SHELLS:
+                if (GetInventoryValue(ITEM_SHELLS) != 0) gSave.stats.shells = 999;
+                break;
+            case SECOND_SCREEN_RESOURCE_KINSTONES:
+                if (GetInventoryValue(ITEM_KINSTONE_BAG) != 0) {
+                    RefillKinstoneBagSafely();
+                }
+                break;
+            case SECOND_SCREEN_RESOURCE_BOMBS:
+                if (GetInventoryValue(ITEM_BOMBS) != 0)
+                    gSave.stats.bombCount = gBombBagSizes[gSave.stats.bombBagType & 3];
+                break;
+            case SECOND_SCREEN_RESOURCE_ARROWS:
+                if (GetInventoryValue(ITEM_BOW) != 0)
+                    gSave.stats.arrowCount = gQuiverSizes[gSave.stats.quiverType & 3];
+                break;
+            default:
+                break;
         }
 
         next.area = gRoomControls.area;
@@ -200,6 +440,7 @@ void Port_SecondScreenState_Publish(void) {
          * applies on EU/JP. The real menu caches the same value on screen
          * entry (sub_080A6290); publishing per tick is only fresher. */
         next.mapHints = (uint16_t)(gSave.map_hints & sub_080A6F40());
+        PublishOutdoorHeartMarkers(&next);
 
         /* Contextual R prompt, resolved exactly like TextUIElement's
          * type2 == 9 branch (src/ui.c): the player-state action wins, else
@@ -277,6 +518,12 @@ void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot) {
     SNAPSHOT_MUTEX_UNLOCK(&sSnapshotMutex);
 }
 
+void Port_SecondScreenState_RequestResource(SecondScreenResource resource) {
+    SNAPSHOT_MUTEX_LOCK(&sSnapshotMutex);
+    sPendingResource = resource;
+    SNAPSHOT_MUTEX_UNLOCK(&sSnapshotMutex);
+}
+
 #else /* Platforms without a live second-screen state consumer. */
 
 void Port_SecondScreenState_Publish(void) {}
@@ -289,5 +536,7 @@ void Port_SecondScreenState_RequestEquip(uint8_t itemId, uint8_t slot) {
     (void)itemId;
     (void)slot;
 }
+
+void Port_SecondScreenState_RequestResource(SecondScreenResource resource) { (void)resource; }
 
 #endif

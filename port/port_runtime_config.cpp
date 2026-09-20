@@ -190,6 +190,13 @@ bool sRibbonCfg = true;        /* F8 menu style: ribbon (true) vs classic */
 bool sMenuHintSeen = false;    /* set once the F8/settings menu is first opened */
 float sMasterVolume = 1.0f;    /* game master volume [0,1]; 1.0 = unchanged */
 bool sHoldAdvanceText = false; /* hold an advance key to keep paging text */
+unsigned sPlayerSpeedMode = 0;
+bool sFastText = false;
+bool sFastSwordCharge = true;
+bool sFastMinishPortal = true;
+bool sQuickKinstones = false;
+bool sQuickFigurines = true;
+bool sStartAtFileSelect = false; /* handheld shortcut; never auto-load a slot */
 bool sRollAttackMacroEnabled = true;
 #ifdef __ANDROID__
 bool sFullscreen = true; /* no windowed mode on a handheld; avoid a visible nav bar */
@@ -317,6 +324,12 @@ const BoolCfg kBoolCfg[] = {
     { "ribbon_mode", &sRibbonCfg, true },
     { "menu_hint_seen", &sMenuHintSeen, false },
     { "hold_advance_text", &sHoldAdvanceText, false },
+    { "fast_text", &sFastText, false },
+    { "fast_sword_charge", &sFastSwordCharge, true },
+    { "fast_minish_portal", &sFastMinishPortal, true },
+    { "quick_kinstones", &sQuickKinstones, false },
+    { "quick_figurines", &sQuickFigurines, true },
+    { "start_at_file_select", &sStartAtFileSelect, false },
     { "roll_attack_macro", &sRollAttackMacroEnabled, true },
 #ifdef __ANDROID__
     { "fullscreen", &sFullscreen, true },
@@ -1923,6 +1936,52 @@ extern "C" bool Port_Config_GetHoldToAdvanceText(void) {
 extern "C" void Port_Config_SetHoldToAdvanceText(bool on) {
     sHoldAdvanceText = on;
     sConfigJson["hold_advance_text"] = on;
+    SaveConfig();
+}
+extern "C" unsigned Port_Config_GetPlayerSpeedMode(void) { return sPlayerSpeedMode; }
+extern "C" void Port_Config_SetPlayerSpeedMode(unsigned mode) {
+    sPlayerSpeedMode = mode > 2 ? 0 : mode;
+    sConfigJson["player_speed"] = sPlayerSpeedMode;
+    SaveConfig();
+}
+extern "C" bool Port_Config_GetFastText(void) { return sFastText; }
+extern "C" void Port_Config_SetFastText(bool on) {
+    sFastText = on;
+    sConfigJson["fast_text"] = on;
+    SaveConfig();
+}
+extern "C" bool Port_Config_GetFastSwordCharge(void) { return sFastSwordCharge; }
+extern "C" void Port_Config_SetFastSwordCharge(bool on) {
+    sFastSwordCharge = on;
+    sConfigJson["fast_sword_charge"] = on;
+    SaveConfig();
+}
+extern "C" bool Port_Config_GetFastMinishPortal(void) { return sFastMinishPortal; }
+extern "C" void Port_Config_SetFastMinishPortal(bool on) {
+    sFastMinishPortal = on;
+    sConfigJson["fast_minish_portal"] = on;
+    SaveConfig();
+}
+extern "C" bool Port_Config_GetQuickKinstones(void) { return sQuickKinstones; }
+extern "C" void Port_Config_SetQuickKinstones(bool on) {
+    sQuickKinstones = on;
+    sConfigJson["quick_kinstones"] = on;
+    SaveConfig();
+}
+extern "C" bool Port_Config_GetQuickFigurines(void) { return sQuickFigurines; }
+extern "C" void Port_Config_SetQuickFigurines(bool on) {
+    sQuickFigurines = on;
+    sConfigJson["quick_figurines"] = on;
+    SaveConfig();
+}
+extern "C" bool Port_Config_GetHeartMapMarkers(void) { return true; }
+extern "C" void Port_Config_SetHeartMapMarkers(bool on) { (void)on; }
+extern "C" bool Port_Config_GetStartAtFileSelect(void) {
+    return sStartAtFileSelect;
+}
+extern "C" void Port_Config_SetStartAtFileSelect(bool on) {
+    sStartAtFileSelect = on;
+    sConfigJson["start_at_file_select"] = on;
     SaveConfig();
 }
 extern "C" bool Port_Config_GetRollAttackMacroEnabled(void) {

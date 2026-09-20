@@ -11,6 +11,16 @@ project(tmc_3ds VERSION "${TMC_3DS_PROJECT_VERSION}" LANGUAGES C CXX)
 
 set(TMC_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 
+# The system HTTPC client on 3DS cannot negotiate RetroAchievements' modern
+# TLS endpoint. Build mbedTLS locally for the dedicated RA transport.
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON CACHE BOOL "" FORCE)
+set(MBEDTLS_USER_CONFIG_FILE "mbedtls_3ds_config.h" CACHE STRING "" FORCE)
+include_directories("${CMAKE_CURRENT_LIST_DIR}/source")
+add_subdirectory("${TMC_ROOT}/third_party/mbedtls" "${CMAKE_CURRENT_BINARY_DIR}/mbedtls" EXCLUDE_FROM_ALL)
+
 file(GLOB TMC_ACTOR_SOURCES CONFIGURE_DEPENDS
     "${TMC_ROOT}/src/playerItem/*.c"
     "${TMC_ROOT}/src/enemy/*.c"
@@ -25,6 +35,24 @@ file(GLOB TMC_ACTOR_SOURCES CONFIGURE_DEPENDS
 )
 
 file(GLOB AGBPLAY_SOURCES CONFIGURE_DEPENDS "${TMC_ROOT}/libs/agbplay_core/*.cpp")
+
+# RetroAchievements' official C runtime.  It deliberately excludes its
+# network transport: the 3DS adapter supplies HTTP through libctru, keeping
+# credentials and socket lifetime under the platform's control.
+file(GLOB RCHEEVOS_CORE_SOURCES CONFIGURE_DEPENDS
+    "${TMC_ROOT}/third_party/rcheevos/src/rcheevos/*.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rapi/*.c"
+)
+set(RCHEEVOS_SOURCES
+    ${RCHEEVOS_CORE_SOURCES}
+    "${TMC_ROOT}/third_party/rcheevos/src/rc_compat.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rc_client.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rc_util.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rc_version.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rhash/md5.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rhash/hash.c"
+    "${TMC_ROOT}/third_party/rcheevos/src/rhash/hash_rom.c"
+)
 
 set(TMC_ENGINE_SOURCES
     src/main.c src/common.c src/interrupts.c src/game.c src/title.c src/fileselect.c
@@ -62,6 +90,8 @@ set(TMC_PORT_SOURCES
     port/port_3ds_full_view_policy.c
     port/port_gba_mem.c port/port_hdma.c port/port_save.c port/port_softslots.c
     port/port_dump_state.c
+    port/port_retroachievements.c
+    port/port_room_transition_profile.c
     port/port_second_screen_state.c
     port/port_second_screen_render.c port/port_second_screen_worldmap.c
     port/port_second_screen_dungeonmap.c port/port_second_screen_quest.c
@@ -83,6 +113,7 @@ add_executable(tmc-3ds
     ${TMC_ENGINE_SOURCES}
     ${TMC_ACTOR_SOURCES}
     ${TMC_PORT_SOURCES}
+    ${RCHEEVOS_SOURCES}
     ${AGBPLAY_SOURCES}
     source/main_3ds.c
     source/platform_3ds.c
@@ -96,6 +127,7 @@ add_executable(tmc-3ds
     source/port_ppu_3ds.c
     source/port_audio_3ds.c
     source/port_config_3ds.c
+    source/port_retroachievements_3ds.c
     source/port_dump_state_3ds.c
     source/port_rando_3ds.c
     source/port_asset_stubs_3ds.c
@@ -106,11 +138,14 @@ target_include_directories(tmc-3ds PRIVATE
     "${TMC_ROOT}" "${TMC_ROOT}/include" "${TMC_ROOT}/port"
     "${TMC_ROOT}/port/ppu/include" "${TMC_ROOT}/libs/agbplay_core"
     "${TMC_ROOT}/build/USA" "${CMAKE_CURRENT_LIST_DIR}/source"
+    "${TMC_ROOT}/third_party/rcheevos/include" "${TMC_ROOT}/third_party/rcheevos/src/rcheevos"
+    "${TMC_ROOT}/third_party/stb"
 )
 
 target_compile_definitions(tmc-3ds PRIVATE
     PC_PORT NON_MATCHING USE_HDMA TMC_3DS MULTI_REGION USA ENGLISH REVISION=0
     MODE1_GBA_WIDTH=400 MODE1_GBA_HEIGHT=240
+    RC_CLIENT_SUPPORTS_HASH RC_HASH_NO_DISC RC_HASH_NO_ZIP RC_HASH_NO_ENCRYPTED
     TMC_PORT_VERSION="${TMC_3DS_VERSION}" TMC_PC_VERSION="${TMC_3DS_VERSION}"
 )
 target_compile_features(tmc-3ds PRIVATE c_std_11 cxx_std_20)
@@ -146,7 +181,7 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-flto;-fno-semantic-interposition;-ffast-math"
 )
 target_link_options(tmc-3ds PRIVATE -O3 -flto -Wl,--gc-sections)
-target_link_libraries(tmc-3ds PRIVATE citro2d citro3d ctru m)
+target_link_libraries(tmc-3ds PRIVATE citro2d citro3d ctru m mbedtls mbedx509 mbedcrypto)
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 file(MAKE_DIRECTORY "${TMC_ROMFS}")
@@ -161,7 +196,7 @@ ctr_generate_smdh(
     OUTPUT "${TMC_SMDH}"
     NAME "The Minish Cap 3DS v${TMC_3DS_VERSION}"
     DESCRIPTION "Native Nintendo 3DS port"
-    AUTHOR "Esteban PDN / Project Picori / samyost1"
+    AUTHOR "Bruno Cruz"
     ICON "${CMAKE_CURRENT_LIST_DIR}/assets/icon-48.png"
 )
 

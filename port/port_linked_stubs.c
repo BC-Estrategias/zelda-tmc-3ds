@@ -1044,6 +1044,16 @@ static Port3DSFullViewMode sWsGameplayMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static u32 sWsProducerPendingRoomKey = 0xffffffffu;
 static Port3DSFullViewMode sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
 static PortWidescreenBannerState sWsEnterRoomBanner;
+/* The area-name manager writes its native BG0 banner one game tick after the
+ * room transition flag/fade clears.  Hold E2 for two VBlanks after that
+ * clear so the manager gets a chance to publish its ownership before a Full
+ * View producer is promoted. */
+static unsigned sWsPostTransitionGuardFrames;
+static PortWidescreenModeEvent sWsModeEvents[PORT_WIDESCREEN_MODE_EVENT_COUNT];
+static unsigned sWsModeEventNext;
+static unsigned sWsModeEventCount;
+static u32 sWsLastReportedModeRoomKey = 0xffffffffu;
+static Port3DSFullViewMode sWsLastReportedMode = PORT_3DS_FULL_VIEW_FALLBACK;
 
 /* UpdateDisplayControls publishes shadows and geometry as one generation.
  * The 3DS presenter normally consumes it on the same thread, but use a small
@@ -1148,14 +1158,65 @@ static int Port_WidescreenFixedCanvasSubtask(void) {
 
 static int Port_WidescreenFullViewUiOverlayActive(void) {
     /* Normal dialogue is remapped by the mode-1 BG0 message-box path and can
-     * remain in Full View. Native GBA windows and room banners still fail
-     * closed because their masks/geometry have not been made viewport-aware. */
+     * remain in Full View. Location banners are also handled below as their
+     * own complete BG0 band, so they must not force a temporary native mode.
+     * Native GBA windows remain fail-closed. */
     if (Port3DSFullViewPolicy_NativeWindowActive(gScreen.lcd.displayControl)) {
         return 1;
     }
-    return Port_WidescreenBannerState_IsActive(
-        &sWsEnterRoomBanner, gMain.task == TASK_GAME,
-        gRoomControls.area, gRoomControls.room);
+    return 0;
+}
+
+static int Port_WidescreenRoomGenerationTransitioning(void);
+
+/* Record only the final result of UpdateShadows.  That routine first clears
+ * the published state while it prepares a new frame; logging that temporary
+ * value would invent a Full -> native -> Full transition every VBlank. */
+static void Port_WidescreenRecordFinalMode(u32 roomKey, Port3DSFullViewMode mode) {
+    if (roomKey == sWsLastReportedModeRoomKey && mode == sWsLastReportedMode) {
+        return;
+    }
+    PortWidescreenModeEvent* event = &sWsModeEvents[sWsModeEventNext];
+    event->frame = (u32)gRoomTransition.frameCount;
+    event->area = gRoomControls.area;
+    event->room = gRoomControls.room;
+    event->mode = (uint8_t)mode;
+    event->fadeActive = gFadeControl.active != 0;
+    event->transitionActive = Port_WidescreenRoomGenerationTransitioning() != 0;
+    event->reloadFlags = (uint8_t)gRoomControls.reload_flags;
+    event->scrollAction = gRoomControls.scrollAction;
+    event->uiOverlay = Port_WidescreenFullViewUiOverlayActive() != 0;
+    sWsModeEventNext = (sWsModeEventNext + 1u) % PORT_WIDESCREEN_MODE_EVENT_COUNT;
+    if (sWsModeEventCount < PORT_WIDESCREEN_MODE_EVENT_COUNT) {
+        ++sWsModeEventCount;
+    }
+    sWsLastReportedModeRoomKey = roomKey;
+    sWsLastReportedMode = mode;
+}
+
+unsigned Port_Widescreen_GetModeEvents(PortWidescreenModeEvent* events, unsigned capacity) {
+    unsigned count = sWsModeEventCount;
+    if (events == NULL || capacity == 0) {
+        return count;
+    }
+    if (count > capacity) {
+        count = capacity;
+    }
+    const unsigned start = (sWsModeEventNext + PORT_WIDESCREEN_MODE_EVENT_COUNT -
+                            sWsModeEventCount) % PORT_WIDESCREEN_MODE_EVENT_COUNT;
+    for (unsigned i = 0; i < count; ++i) {
+        events[i] = sWsModeEvents[(start + i) % PORT_WIDESCREEN_MODE_EVENT_COUNT];
+    }
+    return count;
+}
+
+/* The visible policy remains conservative: a fade can be followed by a
+ * native room banner, so Full View must not be published merely because the
+ * destination map has appeared. */
+static int Port_WidescreenRoomGenerationTransitioning(void) {
+    return Port3DSFullViewPolicy_RoomTransitionActive(
+        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
+        gFadeControl.active != 0, gRoomControls.reload_flags, gRoomControls.scrollAction);
 }
 
 static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
@@ -1171,15 +1232,14 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
     inputs.gameTask = gMain.task == TASK_GAME;
     inputs.fixedCanvas = Port_WidescreenFixedCanvasSubtask();
     inputs.uiOverlay = Port_WidescreenFullViewUiOverlayActive();
-    inputs.transitioning = Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
-        gFadeControl.active != 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    inputs.transitioning = Port_WidescreenRoomGenerationTransitioning();
     inputs.playerValid = gPlayerEntity.base.kind == PLAYER && gRoomControls.camera_target != NULL;
-    /* Mt. Crenel room 2 uses a non-tileable 32x32 static BG3 landscape.
-     * Repeating it across 400 pixels creates a visible seam; keep the entire
-     * scene on E2 until that overlay has a semantic 64-column map. */
-    inputs.unsupportedScene = gRoomControls.area == AREA_MT_CRENEL && gRoomControls.room == 2;
+    /* Mt. Crenel rooms 2 and 3 use a non-tileable 32x32 static BG3
+     * landscape. Room 2 produces a seam when repeated across 400 pixels;
+     * room 3 also exceeds the New 3DS 16.7 ms render budget in Full View.
+     * Keep both on the native producer, which the presenter scales cleanly. */
+    inputs.unsupportedScene = gRoomControls.area == AREA_MT_CRENEL &&
+                              (gRoomControls.room == 2 || gRoomControls.room == 3);
     if (gRoomControls.area <= AREA_98) {
         inputs.areaIsExterior = Port3DSFullViewPolicy_AreaIsExterior(
             gRoomControls.area, gRoomControls.room, gAreaMetadata[gRoomControls.area].flags);
@@ -1196,6 +1256,24 @@ static Port3DSFullViewInputs Port_WidescreenFullViewInputs(void) {
 static Port3DSFullViewMode Port_WidescreenDesired3DSViewMode(void) {
 #ifdef TMC_3DS
     Port3DSFullViewInputs inputs = Port_WidescreenFullViewInputs();
+    return Port3DSFullViewPolicy_Desired(&inputs);
+#else
+    return PORT_3DS_FULL_VIEW_FALLBACK;
+#endif
+}
+
+/* Prewarm only behind a plain room-entry fade. This stages the wide camera
+ * and map shadows without publishing them; the presenter stays native until
+ * the fade/banner state can safely release the complete 400x240 frame. */
+static Port3DSFullViewMode Port_WidescreenPrewarm3DSViewMode(void) {
+#ifdef TMC_3DS
+    if (gFadeControl.active == 0 || gRoomTransition.transitioningOut != 0 ||
+        gRoomTransition.field_0x4[1] != 0 || gRoomControls.reload_flags != 0 ||
+        gRoomControls.scrollAction == 5) {
+        return PORT_3DS_FULL_VIEW_FALLBACK;
+    }
+    Port3DSFullViewInputs inputs = Port_WidescreenFullViewInputs();
+    inputs.transitioning = 0;
     return Port3DSFullViewPolicy_Desired(&inputs);
 #else
     return PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1248,11 +1326,8 @@ static int Port_WidescreenBaseTargetViewWidth(void) {
 
 int Port_Widescreen_TargetViewWidth(void) {
     const Port3DSFullViewMode mode = Port_Widescreen_3DSViewMode();
-    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
+    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X || mode == PORT_3DS_FULL_VIEW_INTERIOR_1X) {
         return MODE1_GBA_WIDTH < 400 ? MODE1_GBA_WIDTH : 400;
-    }
-    if (mode == PORT_3DS_FULL_VIEW_INTERIOR_2X) {
-        return 200;
     }
     return Port_WidescreenBaseTargetViewWidth();
 }
@@ -1357,6 +1432,16 @@ int Port_Widescreen_IsActive(void) {
     if (Port_Widescreen_3DSViewMode() != PORT_3DS_FULL_VIEW_FALLBACK) {
         return 1;
     }
+#ifdef TMC_3DS
+    /* Full View owns the complete 3DS presentation policy. If a scene fails
+     * that policy, produce the original 240x160 canvas rather than falling
+     * through to the legacy 266x160 widescreen producer. The latter only has
+     * partial map shadows in unsupported rooms, which is the source of the
+     * corrupted magenta/black frames reported from the field. */
+    if (Port_Config_3DSFullViewComboEnabled()) {
+        return 0;
+    }
+#endif
     return (gMain.task == TASK_GAME && !Port_WidescreenFixedCanvasSubtask() &&
             Port_Config_WidescreenEnabled() && !Port_Widescreen_FallbackNative()) ? 1 : 0;
 }
@@ -1364,11 +1449,8 @@ int Port_Widescreen_IsActive(void) {
 int Port_Widescreen_EffectiveViewWidth(void) {
     s32 eff;
     const Port3DSFullViewMode mode = Port_Widescreen_3DSViewMode();
-    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
+    if (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X || mode == PORT_3DS_FULL_VIEW_INTERIOR_1X) {
         return 400;
-    }
-    if (mode == PORT_3DS_FULL_VIEW_INTERIOR_2X) {
-        return 200;
     }
     if (!Port_Widescreen_IsActive()) {
         return 240;
@@ -1381,8 +1463,8 @@ int Port_Widescreen_EffectiveViewHeight(void) {
     switch (Port_Widescreen_3DSViewMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
-        case PORT_3DS_FULL_VIEW_INTERIOR_2X:
-            return 120;
+        case PORT_3DS_FULL_VIEW_INTERIOR_1X:
+            return 240;
         default:
             return 160;
     }
@@ -1402,8 +1484,8 @@ int Port_Widescreen_GameplayViewWidth(void) {
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 400;
-        case PORT_3DS_FULL_VIEW_INTERIOR_2X:
-            return 200;
+        case PORT_3DS_FULL_VIEW_INTERIOR_1X:
+            return 400;
         default:
             return Port_WidescreenEstablishedViewWidth();
     }
@@ -1413,8 +1495,8 @@ int Port_Widescreen_GameplayViewHeight(void) {
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
-        case PORT_3DS_FULL_VIEW_INTERIOR_2X:
-            return 120;
+        case PORT_3DS_FULL_VIEW_INTERIOR_1X:
+            return 240;
         default:
             return 160;
     }
@@ -1423,8 +1505,8 @@ int Port_Widescreen_GameplayViewHeight(void) {
 /* Single source of truth for the camera's rest x (see port_widescreen.h).
  * Clamp order (lo wins over hi) matches the GBA branches it replaces. */
 static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode mode) {
-    int viewW = mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? 400 :
-                mode == PORT_3DS_FULL_VIEW_INTERIOR_2X ? 200 :
+    int viewW = (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+                 mode == PORT_3DS_FULL_VIEW_INTERIOR_1X) ? 400 :
                 Port_WidescreenEstablishedViewWidth();
     int lo = (int)gRoomControls.origin_x;
     int boundsW = (int)gRoomControls.width;
@@ -1445,8 +1527,8 @@ static int Port_WidescreenCameraRestXForMode(int target_x, Port3DSFullViewMode m
 }
 
 static int Port_WidescreenCameraRestYForMode(int target_y, Port3DSFullViewMode mode) {
-    int viewH = mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ? 240 :
-                mode == PORT_3DS_FULL_VIEW_INTERIOR_2X ? 120 :
+    int viewH = (mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+                 mode == PORT_3DS_FULL_VIEW_INTERIOR_1X) ? 240 :
                 160;
     int lo = (int)gRoomControls.origin_y;
     int boundsH = (int)gRoomControls.height;
@@ -1497,6 +1579,9 @@ int Port_Widescreen_PrepareGameplayCamera(void) {
 
     const Port3DSFullViewInputs inputs = Port_WidescreenFullViewInputs();
     Port3DSFullViewMode desired = Port3DSFullViewPolicy_Desired(&inputs);
+    if (desired == PORT_3DS_FULL_VIEW_FALLBACK) {
+        desired = Port_WidescreenPrewarm3DSViewMode();
+    }
     if (desired != PORT_3DS_FULL_VIEW_FALLBACK &&
         !Port_WidescreenMapShadowsCanPrepare()) {
         desired = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1567,8 +1652,8 @@ int Port_Widescreen_ProducerViewWidth(void) {
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 400;
-        case PORT_3DS_FULL_VIEW_INTERIOR_2X:
-            return 200;
+        case PORT_3DS_FULL_VIEW_INTERIOR_1X:
+            return 400;
         default:
             return Port_WidescreenEstablishedViewWidth();
     }
@@ -1578,8 +1663,8 @@ int Port_Widescreen_ProducerViewHeight(void) {
     switch (Port_WidescreenGameplayMode()) {
         case PORT_3DS_FULL_VIEW_OUTDOOR_1X:
             return 240;
-        case PORT_3DS_FULL_VIEW_INTERIOR_2X:
-            return 120;
+        case PORT_3DS_FULL_VIEW_INTERIOR_1X:
+            return 240;
         default:
             return 160;
     }
@@ -1735,10 +1820,7 @@ void Port_Widescreen_UpdateShadows(void) {
     int fullViewOutdoor;
     int requiredMapShadows = 0;
     int preparedMapShadows = 0;
-    const int transitionActive = Port3DSFullViewPolicy_RoomTransitionActive(
-        gRoomTransition.transitioningOut != 0 || gRoomTransition.field_0x4[1] != 0,
-        gFadeControl.active != 0,
-        gRoomControls.reload_flags, gRoomControls.scrollAction);
+    const int transitionActive = Port_WidescreenRoomGenerationTransitioning();
 
     (void)Port_WidescreenRead3DSView(&previousRoomKey, &previousMode);
     if (previousRoomKey != roomKey) previousMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1754,6 +1836,9 @@ void Port_Widescreen_UpdateShadows(void) {
     }
     if (transitionActive) {
         sWsExperimentalCameraSnapArmed = 1;
+        sWsPostTransitionGuardFrames = 2;
+    } else if (sWsPostTransitionGuardFrames != 0) {
+        --sWsPostTransitionGuardFrames;
     }
 
     for (int i = 0; i < MODE1_GBA_BG_COUNT; i++) {
@@ -1796,6 +1881,9 @@ void Port_Widescreen_UpdateShadows(void) {
     }
 
     desiredMode = Port_WidescreenDesired3DSViewMode();
+    if (sWsPostTransitionGuardFrames != 0) {
+        desiredMode = PORT_3DS_FULL_VIEW_FALLBACK;
+    }
     if (desiredMode != PORT_3DS_FULL_VIEW_FALLBACK &&
         !Port_WidescreenMapShadowsCanPrepare()) {
         sWsExperimentalCameraSnapArmed = 1;
@@ -1803,7 +1891,6 @@ void Port_Widescreen_UpdateShadows(void) {
         sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
         desiredMode = PORT_3DS_FULL_VIEW_FALLBACK;
     }
-
     /* Commit the geometry this tick actually used to produce BG/OAM. Policy
      * only schedules the following tick. This is what prevents a late fade,
      * message or settings tap from reinterpreting a completed 200/400 frame
@@ -1811,11 +1898,17 @@ void Port_Widescreen_UpdateShadows(void) {
     producerMode = sWsGameplayRoomKey == roomKey
                        ? sWsGameplayMode
                        : PORT_3DS_FULL_VIEW_FALLBACK;
-    if (desiredMode != producerMode) {
+    /* Do not publish a wide producer while the transition policy is native.
+     * A room-name banner is installed just after the fade begins; promoting
+     * during that gap caused the visible Full -> native -> Full sequence.
+     * Camera prewarm remains conservative, but presentation now has one
+     * unambiguous promotion after the banner has gone. */
+    const Port3DSFullViewMode producerRequest = desiredMode;
+    if (producerRequest != producerMode) {
         sWsExperimentalCameraSnapArmed = 1;
-        if (desiredMode != PORT_3DS_FULL_VIEW_FALLBACK) {
+        if (producerRequest != PORT_3DS_FULL_VIEW_FALLBACK) {
             sWsProducerPendingRoomKey = roomKey;
-            sWsProducerPendingMode = desiredMode;
+            sWsProducerPendingMode = producerRequest;
         } else {
             sWsProducerPendingRoomKey = 0xffffffffu;
             sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
@@ -1824,10 +1917,12 @@ void Port_Widescreen_UpdateShadows(void) {
     normalWideActive = gMain.task == TASK_GAME && !Port_WidescreenFixedCanvasSubtask() &&
                        Port_Config_WidescreenEnabled() && !Port_Widescreen_FallbackNative();
     if (producerMode == PORT_3DS_FULL_VIEW_FALLBACK && !normalWideActive) {
+        Port_WidescreenRecordFinalMode(roomKey, PORT_3DS_FULL_VIEW_FALLBACK);
         return;
     }
 
-    fullViewOutdoor = producerMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X;
+    fullViewOutdoor = producerMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+                      producerMode == PORT_3DS_FULL_VIEW_INTERIOR_1X;
     if (gMapBottom.bgSettings != NULL) {
         ++requiredMapShadows;
         int bg = Port_WidescreenPpuBgForControl(gMapBottom.bgSettings->control);
@@ -1861,7 +1956,8 @@ void Port_Widescreen_UpdateShadows(void) {
         sWsProducerPendingRoomKey = 0xffffffffu;
         sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
     }
-    if (latchedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X) {
+    if (latchedMode == PORT_3DS_FULL_VIEW_OUTDOOR_1X ||
+        latchedMode == PORT_3DS_FULL_VIEW_INTERIOR_1X) {
         virtuappu_mode1_ws_full_view = 1;
     }
     if (!Port_Widescreen_ShadowsLive()) {
@@ -1871,9 +1967,11 @@ void Port_Widescreen_UpdateShadows(void) {
             sWsProducerPendingRoomKey = 0xffffffffu;
             sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;
         }
+        Port_WidescreenRecordFinalMode(roomKey, PORT_3DS_FULL_VIEW_FALLBACK);
         return;
     }
     Port_WidescreenPublish3DSView(roomKey, latchedMode);
+    Port_WidescreenRecordFinalMode(roomKey, latchedMode);
     if (latchedMode == producerMode && latchedMode != PORT_3DS_FULL_VIEW_FALLBACK) {
         sWsProducerPendingRoomKey = 0xffffffffu;
         sWsProducerPendingMode = PORT_3DS_FULL_VIEW_FALLBACK;

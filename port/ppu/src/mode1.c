@@ -158,13 +158,15 @@ void virtuappu_mode1_set_old3ds_profile(bool enabled) {
          * next New-profile publication to rebuild it from the live palette. */
         mode1_bg_pair_palette_initialized = false;
     }
-    if (!enabled || mode1_old3ds_field_blend_lut_initialized) return;
+    if (mode1_old3ds_field_blend_lut_initialized) return;
 
     /* Hyrule's normal outdoor profile uses BLDALPHA EVA=4, EVB=14. Build the
      * exact GBA 5-bit channel result once, before any renderer worker starts,
-     * so the Old ARM11 replaces six multiplies and their clamps per blended
-     * pixel with three hot 1 KiB-table reads. The guarded renderer below only
-     * consumes this table when BLDALPHA is exactly 0x0E04. */
+     * so the ARM11 replaces six multiplies and their clamps per blended pixel
+     * with three hot 1 KiB-table reads. The guarded renderer below only
+     * consumes this table when BLDALPHA is exactly 0x0E04. Initialise it for
+     * both hardware profiles: the New 3DS Full View field fast path uses it
+     * too. */
     for (unsigned top = 0; top < 32u; ++top) {
         for (unsigned bottom = 0; bottom < 32u; ++bottom) {
             unsigned value = (top * 4u + bottom * 14u) >> 4u;
@@ -728,16 +730,15 @@ static inline int mode1_bg3_native_top(void) {
                : 0;
 }
 
-/* HDMA tables are authored for the GBA's 160 source scanlines. Full View
- * centers that native canvas at y=40..199, so both the tile sample and the IO
- * snapshot must use source line (destination-native_top). Returning -1 keeps
- * callbacks out of the top/bottom pillar bands. */
+/* HDMA tables are authored for the GBA's 160 source scanlines.  A BG3 HDMA
+ * scroll identifies a screen-space effect (fog, rays, heat haze), rather than
+ * a world map layer.  Project that native canvas over Full View by sampling
+ * its 160 source rows proportionally.  The same source-row mapping must feed
+ * the IO snapshot, otherwise its per-line scroll/alpha values drift from the
+ * scaled tile sample. */
 static inline int mode1_pre_line_source_for_output(int line) {
     if (mode1_bg3_native_bounds_active()) {
-        const int source_line = line - mode1_bg3_native_top();
-        return source_line >= 0 && source_line < MODE1_GBA_NATIVE_HEIGHT
-                   ? source_line
-                   : -1;
+        return line * MODE1_GBA_NATIVE_HEIGHT / mode1_frame_height;
     }
     return line < MODE1_GBA_NATIVE_HEIGHT ? line : -1;
 }
@@ -920,12 +921,25 @@ static void mode1_render_text_bg_native_tokens(int bg_index, int line, uint16_t 
     int shadow_stride = 0;
     const bool shadow_active = virtuappu_mode1_ws_shadow[bg_index] != NULL &&
                                mode1_shadow_geometry_for_bg(bg_index, &shadow_cols, &shadow_stride);
+    /* Some outdoor effects (not map layers) live in BG3's 32-tile native
+     * screen canvas.  Repeating its 256-pixel tilemap across a 400-pixel
+     * Full View tears a continuous effect such as Minish Woods' light rays.
+     * Sample the same native 240-pixel viewport proportionally instead:
+     * its transparent pixels and alpha blend are unchanged, but its whole
+     * authored picture covers the wide screen exactly once. */
+    const bool scale_native_overlay = bg_index == 3 && mode1_shadow_covers_full_view() &&
+                                      map_width_tiles < 64 && !shadow_active &&
+                                      render_width > MODE1_GBA_BG_CLIP_X;
 
     for (int x = 0; x < render_width;) {
-        const int src_x = (x + scroll_x) & map_pixel_mask;
+        const int sample_x = scale_native_overlay ? x * MODE1_GBA_BG_CLIP_X / render_width : x;
+        const int src_x = (sample_x + scroll_x) & map_pixel_mask;
         const int tile_col = src_x >> 3;
         const int first_tile_pixel = src_x & 7;
         int run = 8 - first_tile_pixel;
+        /* Proportional sampling is not one source pixel per output pixel;
+         * keep it exact rather than applying the normal tile-run shortcut. */
+        if (scale_native_overlay) run = 1;
         if (run > render_width - x) run = render_width - x;
         if (!mode1_shadow_covers_full_view() && x < MODE1_GBA_BG_CLIP_X &&
             x + run > MODE1_GBA_BG_CLIP_X) {
@@ -1009,6 +1023,9 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
                                mode1_shadow_geometry_for_bg(bg_index, &shadow_cols, &shadow_stride);
     const bool repeat_full_view_overlay = bg_index == 3 && mode1_shadow_covers_full_view();
     const bool native_bounds = bg_index == 3 && mode1_bg3_native_bounds_active();
+    const bool project_native_overlay = native_bounds &&
+                                        frame_width > MODE1_GBA_BG_CLIP_X &&
+                                        mode1_frame_height > MODE1_GBA_NATIVE_HEIGHT;
     const int native_left = frame_width > MODE1_GBA_BG_CLIP_X
                                 ? (frame_width - MODE1_GBA_BG_CLIP_X) / 2
                                 : 0;
@@ -1029,13 +1046,15 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
                            : MODE1_GBA_BG_CLIP_X;
     if (hud_right_anchor || message_line) render_width = frame_width;
     if (render_width > frame_width) render_width = frame_width;
-    if (native_bounds && (line < native_top || line >= native_bottom)) return;
-
     if (!hud_right_anchor && !message_line) {
         if (native_bounds) {
-            const int native_width = native_right - native_left;
-            mode1_render_text_bg_native_tokens(bg_index, line - native_top, bgcnt,
-                                               native_width, tokens + native_left);
+            const int source_line = project_native_overlay
+                                        ? line * MODE1_GBA_NATIVE_HEIGHT / mode1_frame_height
+                                        : line - native_top;
+            const int output_width = project_native_overlay ? frame_width : native_right - native_left;
+            mode1_render_text_bg_native_tokens(bg_index, source_line, bgcnt,
+                                               output_width,
+                                               project_native_overlay ? tokens : tokens + native_left);
         } else {
             mode1_render_text_bg_native_tokens(bg_index, line, bgcnt, render_width, tokens);
         }
@@ -1046,7 +1065,9 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
     const uint32_t screen_base = (uint32_t)((bgcnt >> 8u) & 0x1Fu) * 0x800u;
     const int scroll_x = virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0HOFS + bg_index * 4)) & 0x1FF;
     const int scroll_y = virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0VOFS + bg_index * 4)) & 0x1FF;
-    const int sample_line = native_bounds ? line - native_top : line;
+    const int sample_line = project_native_overlay
+                                ? line * MODE1_GBA_NATIVE_HEIGHT / mode1_frame_height
+                                : (native_bounds ? line - native_top : line);
     const int src_y = (sample_line + scroll_y) & (map_height_tiles * 8 - 1);
     const int tile_row = src_y >> 3;
     const int pixel_y = src_y & 7;
@@ -1112,7 +1133,7 @@ static void mode1_render_text_bg_compact_tokens(int bg_index, int line, uint16_t
         }
         tokens[x] = (uint16_t)(palette_index + 1u);
     }
-    if (native_bounds) {
+    if (native_bounds && !project_native_overlay) {
         memset(tokens, 0, (size_t)native_left * sizeof(*tokens));
         memset(tokens + native_right, 0,
                (size_t)(frame_width - native_right) * sizeof(*tokens));
@@ -1142,6 +1163,9 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
     int x;
     const int frame_width = mode1_frame_width;
     const bool native_bounds = bg_index == 3 && mode1_bg3_native_bounds_active();
+    const bool project_native_overlay = native_bounds &&
+                                        frame_width > MODE1_GBA_BG_CLIP_X &&
+                                        mode1_frame_height > MODE1_GBA_NATIVE_HEIGHT;
     const int native_left = frame_width > MODE1_GBA_BG_CLIP_X
                                 ? (frame_width - MODE1_GBA_BG_CLIP_X) / 2
                                 : 0;
@@ -1152,7 +1176,9 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
                               (mode1_frame_height < MODE1_GBA_NATIVE_HEIGHT
                                    ? mode1_frame_height
                                    : MODE1_GBA_NATIVE_HEIGHT);
-    const int sample_line = native_bounds ? line - native_top : line;
+    const int sample_line = project_native_overlay
+                                ? line * MODE1_GBA_NATIVE_HEIGHT / mode1_frame_height
+                                : (native_bounds ? line - native_top : line);
     const int eff_line = (mosaic_v == 1) ? sample_line : (sample_line / mosaic_v) * mosaic_v;
     const int src_y = (eff_line + scroll_y) & (map_height_tiles * 8 - 1);
     const int tile_row = src_y / 8;
@@ -1173,7 +1199,7 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
     if (render_max_x > frame_width)
         render_max_x = frame_width;
     int render_min_x = 0;
-    if (native_bounds) {
+    if (native_bounds && !project_native_overlay) {
         if (line < native_top || line >= native_bottom) return;
         render_min_x = native_left;
         render_max_x = native_right;
@@ -1202,6 +1228,7 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
      * instead of needlessly falling back on that inert flag. */
     if (MODE1_NATIVE_FAST_PATHS_ENABLED() && !bpp8 &&
         (!mosaic_on || (mode1_old3ds_profile && mosaic_h == 1 && mosaic_v == 1)) &&
+        !project_native_overlay &&
         !ws_hud_right_anchor && !ws_msg_line && render_min_x == 0) {
         mode1_render_text_bg_native_4bpp(bg_index, char_base, screen_base, map_width_tiles, tile_row, pixel_y,
                                         scroll_x, render_max_x, priority, line_buffer, priority_buffer);
@@ -1292,7 +1319,8 @@ void virtuappu_mode1_render_text_bg_line(int bg_index, int line, uint32_t* line_
          * per-pixel remap dispatch (its two flags are per-line invariants) out
          * of the hot loop entirely — A53 win, zero added per-pixel branch. */
         for (x = render_min_x; x < render_max_x; ++x) {
-            MODE1_BG_PIXEL(native_bounds ? x - native_left : x);
+            MODE1_BG_PIXEL(project_native_overlay ? x * MODE1_GBA_BG_CLIP_X / frame_width
+                                                   : (native_bounds ? x - native_left : x));
         }
     } else {
         for (x = render_min_x; x < render_max_x; ++x) {
@@ -1949,12 +1977,26 @@ void virtuappu_mode1_composite_line(int line, uint32_t bg_layers[MODE1_GBA_BG_CO
  * from the overwhelmingly common indoor and menu frames. */
 static bool mode1_render_native_direct_no_effect_line(int line, uint16_t dispcnt, int frame_width) {
     if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
+        /* Full View has shadow-backed map columns beyond the original GBA
+         * edge. The direct renderer now resolves those columns with the same
+         * per-BG routine as the token compositor, so plain no-effect scenes
+         * (notably Cloud Tops) may use it at 400 pixels as well. Effects and
+         * windows still fail closed to their specialised paths below. */
         (dispcnt & (MODE1_DISP_WIN0_ON | MODE1_DISP_WIN1_ON | MODE1_DISP_OBJWIN_ON)) != 0u) {
         return false;
     }
 
     const uint16_t bldcnt = virtuappu_mode1_io_read16(MODE1_IO_BLDCNT);
-    if (((bldcnt >> 6u) & 3u) != MODE1_BLEND_NONE || (bldcnt & 0x3F00u) != 0u) {
+    /* Minish Woods intermittently leaves BG3 enabled as alpha first target
+     * with EVA=0 and every possible layer beneath it as a second target.
+     * With the observed priority order 0,1,2,0, BG0 wins the only tie; when
+     * BG3 can be seen, its next layer is necessarily a second target.  The
+     * blend therefore resolves exactly to that lower layer, so skipping BG3
+     * is bit-for-bit equivalent and avoids the full compact compositor. */
+    const bool transparent_bg3 =
+        bldcnt == 0x3648u && virtuappu_mode1_io_read16(MODE1_IO_BLDALPHA) == 0x1000u;
+    if ((!transparent_bg3 &&
+         (((bldcnt >> 6u) & 3u) != MODE1_BLEND_NONE || (bldcnt & 0x3F00u) != 0u))) {
         return false;
     }
 
@@ -1966,6 +2008,11 @@ static bool mode1_render_native_direct_no_effect_line(int line, uint16_t dispcnt
         bg_enabled[bg] = (dispcnt & (uint16_t)(MODE1_DISP_BG0_ON << bg)) != 0u;
         bgcnt[bg] = virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0CNT + bg * 2));
         bg_priority[bg] = (uint8_t)(bgcnt[bg] & 3u);
+    }
+    if (transparent_bg3 &&
+        ((bgcnt[0] & 3u) != 0u || (bgcnt[1] & 3u) != 1u ||
+         (bgcnt[2] & 3u) != 2u || (bgcnt[3] & 3u) != 0u)) {
+        return false;
     }
 
     for (int i = 1; i < MODE1_GBA_BG_COUNT; ++i) {
@@ -1987,7 +2034,7 @@ static bool mode1_render_native_direct_no_effect_line(int line, uint16_t dispcnt
 
     for (int order_index = MODE1_GBA_BG_COUNT - 1; order_index >= 0; --order_index) {
         const int bg = bg_order[order_index];
-        if (!bg_enabled[bg]) continue;
+        if (!bg_enabled[bg] || (transparent_bg3 && bg == 3)) continue;
 
         virtuappu_mode1_render_text_bg_line(bg, line, out_row, winning_bg_priority);
     }
@@ -1998,6 +2045,14 @@ static bool mode1_render_native_direct_no_effect_line(int line, uint16_t dispcnt
         memset(obj_layer, 0, (size_t)frame_width * sizeof(uint32_t));
         memset(obj_priority, 0xFF, (size_t)frame_width);
         virtuappu_mode1_render_obj_line(line, (dispcnt & MODE1_DISP_OBJ_1D) != 0u, obj_layer, obj_priority);
+        /* Semi-transparent OBJ is a forced alpha source even when BLDCNT's
+         * ordinary effect is otherwise neutral.  Keep the generic compositor
+         * as the parity oracle for the rare line that contains one. */
+        if (transparent_bg3) {
+            for (int x = 0; x < frame_width; ++x) {
+                if (virtuappu_mode1_obj_semitrans[x]) return false;
+            }
+        }
         for (int x = 0; x < frame_width; ++x) {
             if (obj_layer[x] != 0u && obj_priority[x] <= winning_bg_priority[x]) {
                 out_row[x] = obj_layer[x];
@@ -2028,17 +2083,151 @@ static uint32_t mode1_old3ds_field_alpha_blend(uint32_t top_abgr, uint32_t botto
     return 0xFF000000u | (b << 19u) | (g << 11u) | (r << 3u);
 }
 
-/* Exact fast path for the profile observed in every supplied outdoor Old 3DS
+/* A number of outdoor effects (the Minish Woods fog and the diagonal light
+ * shafts in Hyrule Field) share this display profile: BG3 is alpha-enabled
+ * at priority 0 alongside BG0.  BG0 wins the tie, so BG3 is only relevant
+ * where BG0 is transparent; it then blends over the first visible lower
+ * layer.  Express that fixed order directly instead of making the compact
+ * compositor discover two layers for every one of the 400 columns. */
+static bool mode1_render_bg3_alpha_priority_line(int line, uint16_t dispcnt, int frame_width) {
+    if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
+        (dispcnt & (MODE1_DISP_BG0_ON | MODE1_DISP_BG1_ON | MODE1_DISP_BG2_ON |
+                    MODE1_DISP_BG3_ON)) !=
+            (MODE1_DISP_BG0_ON | MODE1_DISP_BG1_ON | MODE1_DISP_BG2_ON |
+             MODE1_DISP_BG3_ON) ||
+        (dispcnt & (MODE1_DISP_WIN0_ON | MODE1_DISP_WIN1_ON | MODE1_DISP_OBJWIN_ON)) != 0u ||
+        virtuappu_mode1_io_read16(MODE1_IO_BLDCNT) != 0x3648u) {
+        return false;
+    }
+
+    const uint16_t mosaic = virtuappu_mode1_io_read16(MODE1_IO_MOSAIC);
+    uint16_t bgcnt[MODE1_GBA_BG_COUNT];
+    for (int bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        bgcnt[bg] = virtuappu_mode1_io_read16((uint16_t)(MODE1_IO_BG0CNT + bg * 2));
+        if ((bgcnt[bg] & 0x0080u) != 0u ||
+            ((bgcnt[bg] & 0x0040u) != 0u && (mosaic & 0x00FFu) != 0u)) {
+            return false;
+        }
+    }
+    if ((bgcnt[0] & 3u) != 0u || (bgcnt[1] & 3u) != 1u ||
+        (bgcnt[2] & 3u) != 2u || (bgcnt[3] & 3u) != 0u) {
+        return false;
+    }
+
+    const uint16_t bldalpha = virtuappu_mode1_io_read16(MODE1_IO_BLDALPHA);
+    int eva = bldalpha & 0x1Fu;
+    int evb = (bldalpha >> 8u) & 0x1Fu;
+    if (eva > 16) eva = 16;
+    if (evb > 16) evb = 16;
+
+    uint16_t bg_tokens[MODE1_GBA_BG_COUNT][MODE1_GBA_WIDTH];
+    for (int bg = 0; bg < MODE1_GBA_BG_COUNT; ++bg) {
+        memset(bg_tokens[bg], 0, (size_t)frame_width * sizeof(uint16_t));
+        mode1_render_text_bg_compact_tokens(bg, line, bgcnt[bg], frame_width, bg_tokens[bg]);
+    }
+
+    const bool obj_enabled = (dispcnt & MODE1_DISP_OBJ_ON) != 0u;
+    uint32_t obj_layer[MODE1_GBA_WIDTH];
+    uint8_t obj_priority[MODE1_GBA_WIDTH];
+    if (obj_enabled) {
+        memset(obj_layer, 0, (size_t)frame_width * sizeof(uint32_t));
+        memset(obj_priority, 0xFF, (size_t)frame_width);
+        virtuappu_mode1_render_obj_line(line, (dispcnt & MODE1_DISP_OBJ_1D) != 0u, obj_layer, obj_priority);
+        /* A semi-transparent OBJ is a forced alpha source.  It is uncommon
+         * here; use the generic compositor for that scanline rather than
+         * approximating its independent blending rule. */
+        for (int x = 0; x < frame_width; ++x) {
+            if (virtuappu_mode1_obj_semitrans[x]) return false;
+        }
+    } else {
+        memset(virtuappu_mode1_obj_window, 0, (size_t)frame_width);
+        memset(virtuappu_mode1_obj_semitrans, 0, (size_t)frame_width);
+    }
+
+    const uint32_t backdrop = mode1_bg_abgr_lut[0];
+    uint32_t* const out_row = mode1_output_row(line);
+    for (int x = 0; x < frame_width; ++x) {
+        const uint16_t bg0 = bg_tokens[0][x];
+        const uint16_t bg1 = bg_tokens[1][x];
+        const uint16_t bg2 = bg_tokens[2][x];
+        const uint16_t bg3 = bg_tokens[3][x];
+        const bool has_obj = obj_enabled && obj_layer[x] != 0u;
+        const unsigned obj_p = has_obj ? obj_priority[x] : 4u;
+        uint32_t top_color = backdrop;
+        int top_layer = 5;
+
+        if (has_obj && obj_p == 0u) {
+            top_color = obj_layer[x];
+            top_layer = 4;
+        } else if (bg0 != 0u) {
+            top_color = mode1_bg_abgr_lut[bg0 - 1u];
+            top_layer = 0;
+        } else if (bg3 != 0u) {
+            top_color = mode1_bg_abgr_lut[bg3 - 1u];
+            top_layer = 3;
+        } else if (has_obj && obj_p == 1u) {
+            top_color = obj_layer[x];
+            top_layer = 4;
+        } else if (bg1 != 0u) {
+            top_color = mode1_bg_abgr_lut[bg1 - 1u];
+            top_layer = 1;
+        } else if (has_obj && obj_p == 2u) {
+            top_color = obj_layer[x];
+            top_layer = 4;
+        } else if (bg2 != 0u) {
+            top_color = mode1_bg_abgr_lut[bg2 - 1u];
+            top_layer = 2;
+        } else if (has_obj) {
+            top_color = obj_layer[x];
+            top_layer = 4;
+        }
+
+        if (top_layer == 3) {
+            uint32_t bottom_color = backdrop;
+            int bottom_layer = 5;
+            if (has_obj && obj_p == 1u) {
+                bottom_color = obj_layer[x];
+                bottom_layer = 4;
+            } else if (bg1 != 0u) {
+                bottom_color = mode1_bg_abgr_lut[bg1 - 1u];
+                bottom_layer = 1;
+            } else if (has_obj && obj_p == 2u) {
+                bottom_color = obj_layer[x];
+                bottom_layer = 4;
+            } else if (bg2 != 0u) {
+                bottom_color = mode1_bg_abgr_lut[bg2 - 1u];
+                bottom_layer = 2;
+            } else if (has_obj) {
+                bottom_color = obj_layer[x];
+                bottom_layer = 4;
+            }
+            if (mode1_is_second_target(0x3648u, bottom_layer)) {
+                top_color = eva == 0 ? bottom_color
+                                     : mode1_alpha_blend(top_color, bottom_color, eva, evb);
+            }
+        }
+
+        if (x >= MODE1_GBA_BG_CLIP_X && bg0 == 0u && bg1 == 0u && bg2 == 0u && bg3 == 0u) {
+            top_color = 0xFF000000u;
+        }
+        out_row[x] = top_color;
+    }
+    return true;
+}
+
+/* Exact fast path for the profile observed in every supplied outdoor
  * capture. Hyrule's field renderer has four 4bpp tiled BGs with priorities
  * 0,1,2,1; BG3 alone is the alpha first target (EVA=4), while BG1/BG2/OBJ/
  * backdrop are second targets (EVB=14). The generic compact compositor sorts
  * and discovers two layers for every pixel. Here that fixed hardware order is
  * expressed directly, and a second layer is found only for BG3 or a forced
  * semi-transparent OBJ. Any different register value fails closed to the
- * existing renderer, including New 3DS where this profile flag stays false. */
+ * existing renderer. The compact-token compositor supports both the native
+ * 240-pixel view and the 400-pixel Full View geometry, so this profile is
+ * equally valid on New 3DS when the display registers match exactly. */
 static __attribute__((noinline)) bool mode1_render_old3ds_field_alpha_line(int line, uint16_t dispcnt,
                                                                            int frame_width) {
-    if (!mode1_old3ds_profile || !MODE1_NATIVE_FAST_PATHS_ENABLED() ||
+    if (!MODE1_NATIVE_FAST_PATHS_ENABLED() ||
         (dispcnt & (MODE1_DISP_BG0_ON | MODE1_DISP_BG1_ON | MODE1_DISP_BG2_ON |
                     MODE1_DISP_BG3_ON)) !=
             (MODE1_DISP_BG0_ON | MODE1_DISP_BG1_ON | MODE1_DISP_BG2_ON |
@@ -2198,8 +2387,11 @@ static bool mode1_render_native_compact_line(int line, uint16_t dispcnt, int fra
         bg_order_priority[bg] = (uint8_t)(bgcnt[bg] & 3u);
         if (bg_enabled[bg] &&
             ((bgcnt[bg] & 0x0080u) != 0u ||
-             ((bgcnt[bg] & 0x0040u) != 0u &&
-              (!mode1_old3ds_profile || (mosaic & 0x00FFu) != 0u)))) {
+             /* A 1x1 BG mosaic is an identity operation.  Some outdoor
+              * effects keep BGCNT's mosaic flag set while MOSAIC itself is
+              * zero, including Minish Woods' fog.  It is safe on both
+              * profiles and must not force the costly generic renderer. */
+             ((bgcnt[bg] & 0x0040u) != 0u && (mosaic & 0x00FFu) != 0u))) {
             return false;
         }
     }
@@ -2810,20 +3002,26 @@ static void mode1_render_lines(const Mode1RenderLinesContext* context, int first
             int old_path = -1;
             if (mode1_render_native_direct_no_effect_line(line, line_dispcnt, context->frame_width)) {
                 old_path = MODE1_OLD_PATH_DIRECT;
-            } else if (mode1_old3ds_profile &&
-                       mode1_render_old3ds_field_alpha_line(line, line_dispcnt, context->frame_width)) {
+            } else if (mode1_render_bg3_alpha_priority_line(line, line_dispcnt,
+                                                              context->frame_width)) {
+                old_path = MODE1_OLD_PATH_FIELD_ALPHA;
+            } else if (mode1_render_old3ds_field_alpha_line(line, line_dispcnt, context->frame_width)) {
                 old_path = MODE1_OLD_PATH_FIELD_ALPHA;
             } else if (mode1_render_native_compact_line(line, line_dispcnt, context->frame_width)) {
                 old_path = MODE1_OLD_PATH_COMPACT;
             }
             if (old_path >= 0) {
-                if (mode1_old3ds_profile && old_path_lines != NULL) ++old_path_lines[old_path];
+                /* Keep these counters on New 3DS too. They are diagnostic
+                 * evidence for a slow room: previously a New 3DS dump showed
+                 * all zeroes even when every line had fallen through to the
+                 * generic compositor. */
+                if (old_path_lines != NULL) ++old_path_lines[old_path];
                 virtuappu_mode1_io_thread_override = prev_override;
                 continue;
             }
         }
 
-        if (mode1_old3ds_profile && old_path_lines != NULL) {
+        if (old_path_lines != NULL) {
             ++old_path_lines[MODE1_OLD_PATH_FALLBACK];
         }
 

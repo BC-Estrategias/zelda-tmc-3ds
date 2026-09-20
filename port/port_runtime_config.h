@@ -35,6 +35,12 @@ typedef enum {
 } PortInput;
 
 void Port_Config_Load(const char* path);
+
+/* RetroAchievements uses a revocable API token for automatic sign-in on
+ * 3DS. The password is never persisted. */
+bool Port_Config_GetRetroAchievementsSession(char* username, size_t usernameSize, char* token, size_t tokenSize);
+void Port_Config_SetRetroAchievementsSession(const char* username, const char* token);
+void Port_Config_ClearRetroAchievementsSession(void);
 u8 Port_Config_WindowScale(void);
 const char* Port_Config_UpscaleMethod(void);
 u64 Port_Config_FrameTimeNs(void);
@@ -288,6 +294,33 @@ bool Port_Config_GetMenuHintSeen(void);
 void Port_Config_SetMenuHintSeen(bool seen);
 bool Port_Config_GetHoldToAdvanceText(void);
 void Port_Config_SetHoldToAdvanceText(bool on);
+/* 0 = native, 1 = 1.5x, 2 = 2x. Link's normal walking and swimming are
+ * scaled; bursts, rolling, diving and scripted movement stay native. */
+unsigned Port_Config_GetPlayerSpeedMode(void);
+void Port_Config_SetPlayerSpeedMode(unsigned mode);
+/* Faster text keeps the game's own rendering and pauses; it only selects
+ * the native FAST speed preset when a dialog opens. */
+bool Port_Config_GetFastText(void);
+void Port_Config_SetFastText(bool on);
+bool Port_Config_GetFastSwordCharge(void);
+void Port_Config_SetFastSwordCharge(bool on);
+/* Keeps the portal's game-state transition intact while skipping its long
+ * shrink/grow presentation. */
+bool Port_Config_GetFastMinishPortal(void);
+void Port_Config_SetFastMinishPortal(bool on);
+/* Skips the long item-get scene for ordinary Kinstone drops only. */
+bool Port_Config_GetQuickKinstones(void);
+void Port_Config_SetQuickKinstones(bool on);
+/* Carlov's machine preselects the smallest shell bid that reaches 100% and
+ * starts the ordinary draw automatically after confirmation. */
+bool Port_Config_GetQuickFigurines(void);
+void Port_Config_SetQuickFigurines(bool on);
+bool Port_Config_GetHeartMapMarkers(void);
+void Port_Config_SetHeartMapMarkers(bool on);
+/* When enabled, cold boot bypasses the title presentation and opens the
+ * game's normal file-select task.  It never auto-loads a save. */
+bool Port_Config_GetStartAtFileSelect(void);
+void Port_Config_SetStartAtFileSelect(bool on);
 bool Port_Config_GetRollAttackMacroEnabled(void);
 void Port_Config_SetRollAttackMacroEnabled(bool on);
 float Port_Config_GetMasterVolume(void);

@@ -23,6 +23,7 @@
 #ifdef PC_PORT
 #include <stdbool.h>
 extern bool Rando_OverrideLocationKey(u32 location_key, u8* type, u8* subtype);
+#include "port_runtime_config.h"
 #endif
 
 void sub_08081150(ItemOnGroundEntity* this);
@@ -419,6 +420,11 @@ u32 sub_08081420(ItemOnGroundEntity* this) {
 }
 
 bool32 CheckShouldPlayItemGetCutscene(ItemOnGroundEntity* this) {
+#ifdef PC_PORT
+    /* A grass/enemy Kinstone remains a normal silent pickup. This never
+     * touches the Kinstone fusion menu or flagged major-item rewards. */
+    if (super->type == ITEM_KINSTONE && Port_Config_GetQuickKinstones()) return FALSE;
+#endif
     return ((gItemMetaData[super->type].unk3 & 0x2) || !GetInventoryValue(super->type));
 }
 
