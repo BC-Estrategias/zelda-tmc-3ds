@@ -2,6 +2,7 @@
 #include "platform_3ds.h"
 #include "port_retroachievements_3ds.h"
 #include <3ds.h>
+#include <psa/crypto.h>
 #include <curl/curl.h>
 #include <mbedtls/sha256.h>
 #include <malloc.h>
@@ -222,7 +223,7 @@ static bool install_3dsx(void) {
   remove(backup); return true;
 }
 static void run_job(void *arg) {
-  void *soc_buffer = NULL; bool soc_owned = false, curl_ready = false, ac_ready = false, ssl_ready = false;
+  void *soc_buffer = NULL; bool soc_owned = false, ps_owned = false, curl_ready = false, ac_ready = false, ssl_ready = false;
   bool ok = false; Transfer t = {0};
   UpdateStatus s; Updater_GetStatus(&s);
   if (R_FAILED(acInit())) goto done;
@@ -235,6 +236,9 @@ static void run_job(void *arg) {
     soc_buffer = memalign(4096, 1024 * 1024);
     if (!soc_buffer || R_FAILED(socInit(soc_buffer, 1024 * 1024))) goto done;
     soc_owned = true;
+    if (R_FAILED(psInit())) goto done;
+    ps_owned = true;
+    if (psa_crypto_init() != PSA_SUCCESS) goto done;
   }
   // The linked mbedTLS entropy callback needs the SSL service on both models.
   if (R_FAILED(sslcInit(0))) { publish(UPDATE_ERROR, "TLS SERVICE FAILED"); goto done; }
@@ -279,6 +283,7 @@ done:
   if (download_job) remove(UPDATE_PART);
   if (curl_ready) curl_global_cleanup();
   if (ssl_ready) sslcExit();
+  if (ps_owned) psExit();
   if (soc_owned) socExit();
   free(soc_buffer);
   if (ac_ready) acExit();
