@@ -319,6 +319,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap)
         /* Quest status and its two detail lists have no selection cursor. */
         return 0;
     }
+    if (settingsPage == SS_SETTINGS_UPDATE) return 1;
     if (settingsPage == SS_SETTINGS_OVERLAY) {
         /* Live diagnostics deliberately retain their slower refresh rate. */
         return 1;
