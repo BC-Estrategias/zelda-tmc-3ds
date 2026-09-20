@@ -82,6 +82,8 @@ static char sActivePath[SAVE_FILENAME_MAX] = DEFAULT_SAVE_FILENAME;
  * E1 image must not create a new 8 KiB backup on every NPC update. */
 static char sFuserRepairPreservedPath[SAVE_FILENAME_MAX];
 static char sSmithBottleFlagRepairPreservedPath[SAVE_FILENAME_MAX];
+static char sGoronBottleRepairPreservedPath[SAVE_FILENAME_MAX];
+static char sBombInventoryRepairPreservedPath[SAVE_FILENAME_MAX];
 static char sCloudTopsRepairPreservedPath[SAVE_FILENAME_MAX];
 static char sVaatiProgressRepairPreservedPath[SAVE_FILENAME_MAX];
 static PortSaveStats sSaveStats;
@@ -1094,6 +1096,32 @@ int Port_Save_PreserveBeforeCloudTopsRepair(void) {
     return 1;
 }
 
+int Port_Save_PreserveBeforeGoronBottleRepair(void) {
+    if (!sEepromInited || sEepromWriteBlocked) return 0;
+    if (strcmp(sGoronBottleRepairPreservedPath, sActivePath) == 0) return 1;
+    if (sSaveTxnDepth != 0) return 0;
+    if (sEepromDirty) {
+        FlushEepromFile();
+        if (sEepromDirty) return 0;
+    }
+    if (!PreserveFileUnique(sActivePath, "pre-goron-bottle-repair")) return 0;
+    snprintf(sGoronBottleRepairPreservedPath, sizeof(sGoronBottleRepairPreservedPath), "%s", sActivePath);
+    return 1;
+}
+
+int Port_Save_PreserveBeforeBombInventoryRepair(void) {
+    if (!sEepromInited || sEepromWriteBlocked) return 0;
+    if (strcmp(sBombInventoryRepairPreservedPath, sActivePath) == 0) return 1;
+    if (sSaveTxnDepth != 0) return 0;
+    if (sEepromDirty) {
+        FlushEepromFile();
+        if (sEepromDirty) return 0;
+    }
+    if (!PreserveFileUnique(sActivePath, "pre-bomb-inventory-repair")) return 0;
+    snprintf(sBombInventoryRepairPreservedPath, sizeof(sBombInventoryRepairPreservedPath), "%s", sActivePath);
+    return 1;
+}
+
 int Port_Save_PreserveBeforeVaatiProgressRepair(void) {
     if (!sEepromInited || sEepromWriteBlocked) return 0;
     if (strcmp(sVaatiProgressRepairPreservedPath, sActivePath) == 0) return 1;
@@ -1107,7 +1135,7 @@ int Port_Save_PreserveBeforeVaatiProgressRepair(void) {
     return 1;
 }
 
-int Port_Save_ReadVaatiProgressBackupSlot(uint32_t slot, void* data, size_t size) {
+static int ReadRepairBackupSlot(const char* tag, uint32_t slot, void* data, size_t size) {
     static const struct {
         u16 status1;
         u16 status2;
@@ -1124,7 +1152,7 @@ int Port_Save_ReadVaatiProgressBackupSlot(uint32_t slot, void* data, size_t size
     int written;
 
     if (slot >= sizeof(records) / sizeof(records[0]) || data == NULL || size != 0x500) return 0;
-    written = snprintf(backupPath, sizeof(backupPath), "%s.pre-vaati-progress-repair.bak", sActivePath);
+    written = snprintf(backupPath, sizeof(backupPath), "%s.%s.bak", sActivePath, tag);
     if (written < 0 || (size_t)written >= sizeof(backupPath)) return 0;
     if (ReadAndClassifyEepromFile(backupPath, image, NULL, NULL) != EEPROM_IMAGE_ACTIVE_REGION) return 0;
 
@@ -1137,6 +1165,14 @@ int Port_Save_ReadVaatiProgressBackupSlot(uint32_t slot, void* data, size_t size
     }
     memcpy(data, source, size);
     return 1;
+}
+
+int Port_Save_ReadCloudTopsRepairBackupSlot(uint32_t slot, void* data, size_t size) {
+    return ReadRepairBackupSlot("pre-cloud-tops-repair", slot, data, size);
+}
+
+int Port_Save_ReadVaatiProgressBackupSlot(uint32_t slot, void* data, size_t size) {
+    return ReadRepairBackupSlot("pre-vaati-progress-repair", slot, data, size);
 }
 
 void Port_Save_GetStats(PortSaveStats* stats) {
@@ -1284,6 +1320,8 @@ int Port_Save_SetActivePath(const char* path) {
     sEepromWriteBlocked = 0;
     sFuserRepairPreservedPath[0] = '\0';
     sSmithBottleFlagRepairPreservedPath[0] = '\0';
+    sGoronBottleRepairPreservedPath[0] = '\0';
+    sBombInventoryRepairPreservedPath[0] = '\0';
     sCloudTopsRepairPreservedPath[0] = '\0';
     sVaatiProgressRepairPreservedPath[0] = '\0';
     return 1;
@@ -1329,6 +1367,8 @@ int Port_Save_ClearActiveProfileData(void) {
     sFlushFailedLast = 0;
     sFuserRepairPreservedPath[0] = '\0';
     sSmithBottleFlagRepairPreservedPath[0] = '\0';
+    sGoronBottleRepairPreservedPath[0] = '\0';
+    sBombInventoryRepairPreservedPath[0] = '\0';
     sCloudTopsRepairPreservedPath[0] = '\0';
 #ifdef PORT_SAVE_TEST
     sTestFailNextPreserve = 0;

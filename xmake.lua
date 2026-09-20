@@ -203,8 +203,8 @@ elseif is_plat("android") then
     add_requires("libpng", {system = false})
     add_requires("zlib",   {system = false})
 else
-    add_requires("libpng", {system = true, optional = true})
-    add_requires("zlib",   {system = true, optional = true})
+    add_requires("libpng")
+    add_requires("zlib")
 end
 
 -- Global -mno-ms-bitfields on MinGW so the entire codebase matches the
@@ -796,6 +796,7 @@ target("tmc_pc")
     -- the engine's already-loaded ROM buffer.
     add_files("tools/src/assets_extractor/assets_extractor_api.cpp")
     add_files("port/port_m4a_backend.cpp")
+    add_files("port/port_m4a_mixdown.c")
     add_files("port/generated_sounds_embed.cpp")  -- compile-time sounds.json fallback
     add_files("port/port_ppu.cpp")      -- PPU bridge (C++ → ViruaPPU)
     add_files("port/port_gpu_renderer.cpp")  -- SDL_GPU presentation (Stage 1: scaffold; gated on --gpu_renderer=y)
@@ -860,6 +861,8 @@ target("tmc_pc")
     add_files("port/port_hdma.c")    -- HBlank-DMA simulation (iris/circle WIN0H)
     add_files("port/port_upscale.c") -- xBRZ-style pixel-art upscaler
     add_files("port/port_save.c")        -- EEPROM save emulation
+    add_files("port/port_bottle_compat.c", "port/port_cloud_tops_fight.c", "port/port_vaati_progress.c")
+    add_files("port/port_bomb_compat.c")
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
@@ -1280,6 +1283,31 @@ target_end()
 -- ====================
 -- EU sprite-table hole + byte-exact production OAM regression test.
 -- ====================
+target("bottle_compat_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_files("port/port_bottle_compat.c", "port/port_bottle_compat_test.c")
+target_end()
+
+target("chest_reward_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_chest_reward_test.c", "port/port_bottle_compat.c")
+    add_files("src/object/chestSpawner.c", "src/playerItemUtils.c")
+target_end()
+
 target("sprite_region_oam_test")
     set_kind("binary")
     set_languages("c11")
@@ -1299,6 +1327,50 @@ target("sprite_region_oam_test")
     add_files("port/port_draw.c")
     add_files("src/enemyUtils.c")
     add_files("src/projectileUtils.c")
+target_end()
+
+
+-- ====================
+-- Horizontal Minish-path GBA EWRAM-alias materialization regression test.
+-- ====================
+target("horizontal_minish_path_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".")
+    add_includedirs("port")
+    add_includedirs("include")
+    add_defines("PC_PORT", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_horizontal_minish_path_test.c")
+    add_files("src/manager/horizontalMinishPathBackgroundManager.c")
+target_end()
+
+
+-- ====================
+-- NPC graphics-allocation failure/retry regression test (Goron quest).
+-- ====================
+target("npc_gfx_retry_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".")
+    add_includedirs("port")
+    add_includedirs("include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_npc_gfx_retry_test.c")
+    add_files("src/npcUtils.c")
 target_end()
 
 
@@ -1784,6 +1856,19 @@ target_end()
 -- 3DS ARM11 host-pointer regression test. This builds the TMC_3DS branch on
 -- the desktop with a mocked memory-map query.
 -- ====================
+-- ====================
+-- Nine-slice mapping regression test. DrawSliced carries sd/se/modulus
+-- incrementally instead of calling SliceMap (four software divides) per pixel;
+-- this proves the two agree for every pixel across the parameter space.
+-- ====================
+target("port_second_screen_slicemap_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_files("port/port_second_screen_slicemap_test.c")
+target_end()
+
+
 target("host_pointer_3ds_test")
     set_kind("binary")
     set_languages("c11")
@@ -1820,6 +1905,77 @@ target("bottom_frame_state_3ds_test")
     add_includedirs("platform/3ds/source")
     add_files("platform/3ds/source/bottom_frame_state_3ds.c")
     add_files("platform/3ds/tests/bottom_frame_state_3ds_test.c")
+target_end()
+
+-- ====================
+-- 3DS MAP-tab repaint-skip signature regression test.
+-- ====================
+target("bottom_map_anim_3ds_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("platform/3ds/source")
+    add_files("platform/3ds/source/bottom_map_anim_3ds.c")
+    add_files("platform/3ds/tests/bottom_map_anim_3ds_test.c")
+    add_syslinks("m")
+target_end()
+
+
+-- ====================
+-- MP2K track mixdown bit-exactness regression test.
+-- ====================
+target("port_m4a_mixdown_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("port")
+    add_files("port/port_m4a_mixdown.c")
+    add_files("port/port_m4a_mixdown_test.c")
+    add_syslinks("m")
+target_end()
+-- ====================
+-- Old/New 3DS GPU upload layout regression test.
+-- ====================
+target("platform_gpu_layout_3ds_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("platform/3ds/source", "port")
+    add_files("platform/3ds/tests/platform_gpu_layout_3ds_test.c")
+target_end()
+
+
+target("port_ppu_gpu_3ds_bench")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_defines("MODE1_GBA_WIDTH=266", "PPU_GPU3DS_PROFILE", "_POSIX_C_SOURCE=200809L")
+    add_includedirs("platform/3ds/source", "port/ppu/include")
+    add_files("platform/3ds/source/port_ppu_gpu_3ds_model.c")
+    -- The software rasterizer is the oracle the GPU model must agree with;
+    -- comparing the two map-space paths against each other cannot catch a
+    -- fault they share.
+    add_files("port/ppu/src/*.c")
+    add_files("platform/3ds/tests/port_ppu_gpu_3ds_bench.c")
+target_end()
+
+
+target("ppu_gpu_3ds_budget_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("platform/3ds/source", "port/ppu/include")
+    add_files("platform/3ds/tests/ppu_gpu_3ds_budget_test.c")
+target_end()
+
+target("port_ppu_gpu_3ds_model_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_defines("MODE1_GBA_WIDTH=266")
+    add_includedirs("platform/3ds/source", "port/ppu/include")
+    add_files("platform/3ds/source/port_ppu_gpu_3ds_model.c")
+    add_files("platform/3ds/tests/port_ppu_gpu_3ds_model_test.c")
 target_end()
 
 
@@ -2323,3 +2479,97 @@ task("rom")
         options = {}
     }
 task_end()
+
+-- Production subtask restoration must preserve affine matrices and ownership.
+target("subtask_affine_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "port/SDL3")
+    add_defines("PC_PORT", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_subtask_affine_test.c", "src/subtask.c", "src/code_0805EC04.c")
+target_end()
+
+-- Production palette reservation and enemy death allocation regressions.
+for _, spec in ipairs({
+    {"palette_release_test", "port/port_palette_release_test.c", "src/color.c"},
+    {"enemy_death_fx_test", "port/port_enemy_death_fx_test.c", "src/enemyUtils.c"}
+}) do
+    target(spec[1])
+        set_kind("binary")
+        set_languages("c11")
+        set_targetdir("build/pc")
+        add_includedirs(".", "port", "include")
+        add_defines("PC_PORT", "USA", "ENGLISH")
+        add_cflags("-ffunction-sections")
+        if is_plat("macosx") then
+            add_ldflags("-Wl,-dead_strip")
+        else
+            add_ldflags("-Wl,--gc-sections")
+        end
+        add_files(spec[2], spec[3])
+    target_end()
+end
+
+target("gfx_slots_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_gfx_slots_test.c", "src/vram.c")
+target_end()
+
+-- Native equivalents of the three retail EU Backport corrections.
+target("eu_backport_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "port/SDL3")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections", "-fdata-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_eu_backport_test.c", "src/npc/farmers.c", "src/roomInit.c",
+              "src/itemMetaData.c", "src/itemUtils.c")
+target_end()
+
+target("second_screen_state_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "platform/3ds/source")
+    add_defines("PC_PORT", "TMC_3DS", "USA", "ENGLISH")
+    add_files("port/port_second_screen_state.c", "port/port_second_screen_state_test.c")
+target_end()
+
+-- Legacy bomb ownership recovery and the actual bag reward path.
+target("bomb_compat_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs(".", "port", "include", "build/USA")
+    add_defines("PC_PORT", "MULTI_REGION", "USA", "ENGLISH")
+    add_cflags("-ffunction-sections", "-fdata-sections")
+    if is_plat("macosx") then
+        add_ldflags("-Wl,-dead_strip")
+    else
+        add_ldflags("-Wl,--gc-sections")
+    end
+    add_files("port/port_bomb_compat.c", "port/port_bomb_compat_test.c", "src/itemUtils.c", "src/itemMetaData.c")
+target_end()

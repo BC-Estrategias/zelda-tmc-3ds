@@ -64,19 +64,35 @@ static const EnemyDefinition kBowMoblinForms[] = {
     { .spriteIndex = SPRITE_BOWMOBLIN },
     { .spriteIndex = SPRITE_BOWMOBLIN_1 },
 };
+static const EnemyDefinition kVaatiTransfiguredForms[] = {
+    { .spriteIndex = SPRITE_VAATITRANSFIGURED_0 },
+    { .spriteIndex = SPRITE_VAATITRANSFIGURED_1 },
+    { .spriteIndex = SPRITE_VAATITRANSFIGURED_2 },
+    { .spriteIndex = SPRITE_VAATITRANSFIGURED_3 },
+    { .spriteIndex = SPRITE_VAATITRANSFIGURED_4 },
+    { .spriteIndex = SPRITE_VAATITRANSFIGURED_5 },
+};
+static const EnemyDefinition kVaatiTransfiguredEyeForms[] = {
+    { .spriteIndex = SPRITE_ENEMY5A },
+    { .spriteIndex = SPRITE_ENEMY5A },
+};
 EnemyDefinition gEnemyDefinitions[0x70] = {
+    [VAATI_TRANSFIGURED_EYE] = { .gfx = 0xFFFFu, .ptr.definition = kVaatiTransfiguredEyeForms },
     [LEEVER] = { .spriteIndex = SPRITE_LEEVER },
     [SPEAR_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kSpearMoblinForms },
     [BOW_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kBowMoblinForms },
+    [VAATI_TRANSFIGURED] = { .gfx = 0xFFFFu, .ptr.definition = kVaatiTransfiguredForms },
     [GYORG_CHILD] = { .spriteIndex = SPRITE_GYORGCHILD },
     [GYORG_FEMALE_EYE] = { .spriteIndex = SPRITE_GYORGFEMALEEYE },
     [GYORG_MALE_EYE] = { .spriteIndex = SPRITE_ENEMY62 },
     [GYORG_FEMALE_MOUTH] = { .spriteIndex = SPRITE_GYORGFEMALEMOUTH },
 };
 EnemyDefinition gEnemyDefinitions_eu[0x70] = {
+    [VAATI_TRANSFIGURED_EYE] = { .gfx = 0xFFFFu, .ptr.definition = kVaatiTransfiguredEyeForms },
     [LEEVER] = { .spriteIndex = SPRITE_LEEVER },
     [SPEAR_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kSpearMoblinForms },
     [BOW_MOBLIN] = { .gfx = 0xFFFFu, .ptr.definition = kBowMoblinForms },
+    [VAATI_TRANSFIGURED] = { .gfx = 0xFFFFu, .ptr.definition = kVaatiTransfiguredForms },
     [GYORG_CHILD] = { .spriteIndex = SPRITE_GYORGCHILD },
     [GYORG_FEMALE_EYE] = { .spriteIndex = SPRITE_GYORGFEMALEEYE },
     [GYORG_MALE_EYE] = { .spriteIndex = SPRITE_ENEMY62 },
@@ -86,9 +102,17 @@ EnemyDefinition gEnemyDefinitions_eu[0x70] = {
 static const ProjectileDefinition kSpikedRollerForms[] = {
     { .spriteIndex = SPRITE_SPIKEDROLLERS },
 };
+static const ProjectileDefinition kV2ProjectileForms[] = {
+    { .spriteIndex = SPRITE_V2PROJECTILE },
+    { .spriteIndex = SPRITE_POT },
+    { .spriteIndex = SPRITE_LAKITULIGHTNING },
+};
 const ProjectileDefinition gProjectileDefinitions[0x25] = {
     [ARROW_PROJECTILE] = { .spriteIndex = SPRITE_ARROWPROJECTILE },
+    [V1_DARK_MAGIC_PROJECTILE] = { .spriteIndex = SPRITE_V1DARKMAGICPROJECTILE },
+    [V1_EYE_LASER] = { .spriteIndex = SPRITE_V1EYELASER },
     [SPIKED_ROLLERS] = { .gfx = 0xFFFFu, .ptr.definition = kSpikedRollerForms },
+    [V2_PROJECTILE] = { .gfx = 0xFFFFu, .ptr.definition = kV2ProjectileForms },
     [GYORG_MALE_ENERGY_PROJECTILE] = { .spriteIndex = SPRITE_GYORGMALEENERGYPROJECTILE },
 };
 const ProjectileDefinition gProjectileDefinition_12_alt[] = { { 0 } };
@@ -197,6 +221,21 @@ static void CheckProductionSourceConversions(void) {
     gActiveRegion = TMC_REGION_EU;
 
     memset(&projectile, 0, sizeof(projectile));
+    projectile.id = V1_DARK_MAGIC_PROJECTILE;
+    CHECK_EQ(ProjectileInit(&projectile), TRUE, "EU Vaati dark magic initializes");
+    CHECK_EQ(projectile.spriteIndex, 292u, "EU Vaati dark magic stores native sprite 292");
+
+    memset(&projectile, 0, sizeof(projectile));
+    projectile.id = V1_EYE_LASER;
+    CHECK_EQ(ProjectileInit(&projectile), TRUE, "EU Vaati eye laser initializes");
+    CHECK_EQ(projectile.spriteIndex, 291u, "EU Vaati eye laser stores native sprite 291");
+
+    memset(&projectile, 0, sizeof(projectile));
+    projectile.id = V2_PROJECTILE;
+    CHECK_EQ(ProjectileInit(&projectile), TRUE, "EU Vaati second-form projectile initializes");
+    CHECK_EQ(projectile.spriteIndex, 315u, "EU Vaati second-form projectile stores native sprite 315");
+
+    memset(&projectile, 0, sizeof(projectile));
     projectile.id = ARROW_PROJECTILE;
     CHECK_EQ(ProjectileInit(&projectile), TRUE, "EU arrow projectile initializes");
     CHECK_EQ(projectile.spriteIndex, 320u, "EU arrow stores native sprite 320");
@@ -212,6 +251,20 @@ static void CheckProductionSourceConversions(void) {
     projectile.id = GYORG_MALE_ENERGY_PROJECTILE;
     CHECK_EQ(ProjectileInit(&projectile), TRUE, "EU Gyorg energy projectile initializes");
     CHECK_EQ(projectile.spriteIndex, 305u, "EU Gyorg energy projectile stores native sprite 305");
+
+    memset(&enemy, 0, sizeof(enemy));
+    enemy.base.id = VAATI_TRANSFIGURED;
+    enemy.base.type = 4;
+    CHECK_EQ(EnemyInit(&enemy), TRUE, "EU Vaati second-form satellite initializes");
+    CHECK_EQ(enemy.base.spriteIndex, 297u, "EU Vaati second-form satellite stores native sprite 297");
+    CHECK_EQ(EnemyInit(&enemy), TRUE, "EU Vaati second-form satellite second init is a no-op");
+    CHECK_EQ(enemy.base.spriteIndex, 297u, "EU Vaati second-form satellite is not shifted twice");
+
+    memset(&enemy, 0, sizeof(enemy));
+    enemy.base.id = VAATI_TRANSFIGURED;
+    enemy.base.type = 5;
+    CHECK_EQ(EnemyInit(&enemy), TRUE, "EU Vaati second-form eye initializes");
+    CHECK_EQ(enemy.base.spriteIndex, 298u, "EU Vaati second-form eye stores native sprite 298");
 
     memset(&enemy, 0, sizeof(enemy));
     enemy.base.id = SPEAR_MOBLIN;
@@ -260,6 +313,21 @@ static void CheckProductionSourceConversions(void) {
     gActiveRegion = TMC_REGION_USA;
 
     memset(&projectile, 0, sizeof(projectile));
+    projectile.id = V1_DARK_MAGIC_PROJECTILE;
+    CHECK_EQ(ProjectileInit(&projectile), TRUE, "USA Vaati dark magic initializes");
+    CHECK_EQ(projectile.spriteIndex, 293u, "USA Vaati dark magic keeps compiled sprite 293");
+
+    memset(&projectile, 0, sizeof(projectile));
+    projectile.id = V1_EYE_LASER;
+    CHECK_EQ(ProjectileInit(&projectile), TRUE, "USA Vaati eye laser initializes");
+    CHECK_EQ(projectile.spriteIndex, 292u, "USA Vaati eye laser keeps compiled sprite 292");
+
+    memset(&projectile, 0, sizeof(projectile));
+    projectile.id = V2_PROJECTILE;
+    CHECK_EQ(ProjectileInit(&projectile), TRUE, "USA Vaati second-form projectile initializes");
+    CHECK_EQ(projectile.spriteIndex, 316u, "USA Vaati second-form projectile keeps compiled sprite 316");
+
+    memset(&projectile, 0, sizeof(projectile));
     projectile.id = ARROW_PROJECTILE;
     CHECK_EQ(ProjectileInit(&projectile), TRUE, "USA arrow projectile initializes");
     CHECK_EQ(projectile.spriteIndex, 321u, "USA arrow keeps compiled sprite 321");
@@ -273,6 +341,18 @@ static void CheckProductionSourceConversions(void) {
     projectile.id = GYORG_MALE_ENERGY_PROJECTILE;
     CHECK_EQ(ProjectileInit(&projectile), TRUE, "USA Gyorg energy projectile initializes");
     CHECK_EQ(projectile.spriteIndex, 306u, "USA Gyorg energy projectile keeps compiled sprite 306");
+
+    memset(&enemy, 0, sizeof(enemy));
+    enemy.base.id = VAATI_TRANSFIGURED;
+    enemy.base.type = 4;
+    CHECK_EQ(EnemyInit(&enemy), TRUE, "USA Vaati second-form satellite initializes");
+    CHECK_EQ(enemy.base.spriteIndex, 298u, "USA Vaati second-form satellite keeps compiled sprite 298");
+
+    memset(&enemy, 0, sizeof(enemy));
+    enemy.base.id = VAATI_TRANSFIGURED;
+    enemy.base.type = 5;
+    CHECK_EQ(EnemyInit(&enemy), TRUE, "USA Vaati second-form eye initializes");
+    CHECK_EQ(enemy.base.spriteIndex, 299u, "USA Vaati second-form eye keeps compiled sprite 299");
 
     memset(&enemy, 0, sizeof(enemy));
     enemy.base.id = SPEAR_MOBLIN;
@@ -326,6 +406,10 @@ int main(void) {
                                                        0x00, 0xF8, 0x15, 0x00, 0x20,
                                                        0xF0, 0xF8, 0x11, 0x00, 0x20 };
     static const u8 kMappedEu320Frame0[] = { 0x01, 0xF9, 0x04, 0x40, 0x0D, 0x00 };
+    static const u8 kVaatiEyeFrame0[] = { 0x01, 0xFC, 0xFC, 0x00, 0x00, 0x00 };
+    static const u8 kWrongVaatiEffectFrame0[] = { 0x03, 0xF0, 0xF0, 0x40, 0x00, 0x00,
+                                                    0x00, 0x00, 0x40, 0x10, 0x00,
+                                                    0x10, 0x10, 0x40, 0x20, 0x00 };
     OAMCommand cmd;
 
     memset(gFrameObjLists, 0, sizeof(gFrameObjLists));
@@ -336,6 +420,39 @@ int main(void) {
     InstallFrame(312u, 0x1040u, 0x1140u, kWrongEu312GyorgChildFrame0, sizeof(kWrongEu312GyorgChildFrame0));
     Port_LoadOverlayDataFromConst(kOverlaySizeData, sizeof(kOverlaySizeData));
     CheckProductionSourceConversions();
+
+    /* The eye enemy is separate from VAATI_TRANSFIGURED type 4/5. Both
+     * eye types share a compiled-USA sprite ID. A missing conversion picks
+     * the adjacent effect's animation and large-piece geometry in EU. */
+    for (unsigned region = 0; region < 2; ++region) {
+        gRomRegion = region ? ROM_REGION_EU : ROM_REGION_USA;
+        gActiveRegion = region ? TMC_REGION_EU : TMC_REGION_USA;
+        const u16 nativeEye = region ? 296u : 297u;
+        InstallFrame(296u, 0x1200u, 0x1300u, kVaatiEyeFrame0, sizeof(kVaatiEyeFrame0));
+        InstallFrame(297u, 0x1210u, 0x1320u,
+                     region ? kWrongVaatiEffectFrame0 : kVaatiEyeFrame0,
+                     region ? sizeof(kWrongVaatiEffectFrame0) : sizeof(kVaatiEyeFrame0));
+        for (unsigned type = 0; type < 2; ++type) {
+            Enemy eye;
+            memset(&eye, 0, sizeof(eye));
+            eye.base.id = VAATI_TRANSFIGURED_EYE;
+            eye.base.type = type;
+            CHECK_EQ(EnemyInit(&eye), TRUE, "Vaati eye initializes");
+            CHECK_EQ(eye.base.spriteIndex, nativeEye, "Vaati eye selects regional eye sprite");
+            CHECK_EQ(EnemyInit(&eye), TRUE, "Vaati eye repeated init succeeds");
+            CHECK_EQ(eye.base.spriteIndex, nativeEye, "Vaati eye is not double-remapped");
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.x = 100;
+            cmd.y = 80;
+            cmd._8 = 0x6340;
+            ClearOam();
+            ram_DrawDirect(&cmd, eye.base.spriteIndex, 0);
+            CHECK_EQ(gOAMControls.updated, 1u, "Vaati eye emits eye geometry, not adjacent effect");
+            CHECK_EQ(OamHalfword(0, 0), 76u, "Vaati eye attr0");
+            CHECK_EQ(OamHalfword(0, 1), 96u, "Vaati eye attr1");
+            CHECK_EQ(OamHalfword(0, 2), 0x6340u, "Vaati eye tile and palette");
+        }
+    }
 
     memset(&cmd, 0, sizeof(cmd));
     cmd.x = 41;

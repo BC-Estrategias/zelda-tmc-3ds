@@ -28,6 +28,7 @@
 #include "fade.h"
 #ifdef PC_PORT
 #include "port_bottle_compat.h"
+#include "port_bomb_compat.h"
 #include "port_cloud_tops_fight.h"
 #include "port_vaati_progress.h"
 #include "port_ppu.h"
@@ -855,6 +856,32 @@ void SetActiveSave(u32 idx) {
             }
         }
 
+        if (Port_BombInventoryNeedsRepair(&gSave, Rando_IsActive())) {
+            if (!Port_Save_PreserveBeforeBombInventoryRepair()) {
+                fprintf(stderr, "[SAVE] Refused bomb inventory repair: permanent backup failed.\n");
+            } else if (Port_RepairBombInventory(&gSave, Rando_IsActive())) {
+                MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
+                if (WriteSaveFile(idx, &gSave) != 0) {
+                    fprintf(stderr, "[SAVE] Restored missing normal bombs in slot %u.\n", idx);
+                } else {
+                    fprintf(stderr, "[SAVE] Restored bombs in memory; persistence will retry on save.\n");
+                }
+            }
+        }
+
+        if (Port_GoronBottleNeedsRepair(&gSave, Rando_IsActive())) {
+            if (!Port_Save_PreserveBeforeGoronBottleRepair()) {
+                fprintf(stderr, "[SAVE] Refused Goron bottle repair: permanent backup failed.\n");
+            } else if (Port_RepairGoronBottle(&gSave, Rando_IsActive())) {
+                MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
+                if (WriteSaveFile(idx, &gSave) != 0) {
+                    fprintf(stderr, "[SAVE] Reopened the uncredited Goron bottle chest in slot %u.\n", idx);
+                } else {
+                    fprintf(stderr, "[SAVE] Reopened Goron chest in memory; persistence will retry on save.\n");
+                }
+            }
+        }
+
         if (Port_SmithBottleFlagsNeedRepair(&gSave, Rando_IsActive())) {
             if (!Port_Save_PreserveBeforeSmithBottleFlagRepair()) {
                 fprintf(stderr,
@@ -873,32 +900,42 @@ void SetActiveSave(u32 idx) {
             }
         }
 
-        if (!Rando_IsActive() && Port_CloudTopsHasLostGoldenKinstone(&gSave)) {
-            if (!Port_Save_PreserveBeforeCloudTopsRepair()) {
+        if (!Rando_IsActive()) {
+            SaveFile cloudTopsRepairBackup;
+            bool32 legacyInventoryRepair = FALSE;
+            bool32 needsFightReplay;
+            u32 backupIdx;
+
+            if (Port_CloudTopsMayNeedLegacyInventoryRepair(&gSave)) {
+                /* A user may have copied the affected slot after E9 inserted
+                 * the item.  Search every slot in the preserved pre-E9
+                 * profile, but let the semantic matcher authorize only the
+                 * matching predecessor. */
+                for (backupIdx = 0; backupIdx < NUM_SAVE_SLOTS && !legacyInventoryRepair; ++backupIdx) {
+                    legacyInventoryRepair =
+                        Port_Save_ReadCloudTopsRepairBackupSlot(backupIdx, &cloudTopsRepairBackup,
+                                                                sizeof(cloudTopsRepairBackup)) &&
+                        Port_CloudTopsBackupProvesLegacyInventoryRepair(&gSave, &cloudTopsRepairBackup);
+                }
+            }
+            needsFightReplay = Port_CloudTopsNeedsFightReplay(&gSave, legacyInventoryRepair);
+
+            if (needsFightReplay && !Port_Save_PreserveBeforeCloudTopsRepair()) {
                 fprintf(stderr,
-                        "[SAVE] Refused Cloud Tops reward repair for slot %u because the permanent backup "
+                        "[SAVE] Refused Cloud Tops fight repair for slot %u because the permanent backup "
                         "failed.\n",
                         idx);
-            } else {
-                AddKinstoneToBag(PORT_CLOUD_TOPS_GOLDEN_KINSTONE);
-                if (Port_CloudTopsHasLostGoldenKinstone(&gSave)) {
+            } else if (needsFightReplay && Port_RepairCloudTopsFight(&gSave, legacyInventoryRepair)) {
+                MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
+                if (WriteSaveFile(idx, &gSave) != 0) {
                     fprintf(stderr,
-                            "[SAVE] Refused Cloud Tops reward repair for slot %u because the Kinstone bag has "
-                            "no free entry.\n",
+                            "[SAVE] Reopened the corrupted Cloud Tops piranha fight and reward in slot %u.\n",
                             idx);
                 } else {
-                    MemCopy(&gSave, &gFileSelectState.saves[idx], sizeof(gSave));
-                    if (WriteSaveFile(idx, &gSave) != 0) {
-                        fprintf(stderr,
-                                "[SAVE] Recovered the missing Cloud Tops golden Kinstone in slot %u and "
-                                "persisted the repaired save.\n",
-                                idx);
-                    } else {
-                        fprintf(stderr,
-                                "[SAVE] Recovered the missing Cloud Tops golden Kinstone in slot %u in memory; "
-                                "durable persistence will retry on the next save.\n",
-                                idx);
-                    }
+                    fprintf(stderr,
+                            "[SAVE] Reopened the corrupted Cloud Tops piranha fight and reward in slot %u in "
+                            "memory; durable persistence will retry on the next save.\n",
+                            idx);
                 }
             }
         }
