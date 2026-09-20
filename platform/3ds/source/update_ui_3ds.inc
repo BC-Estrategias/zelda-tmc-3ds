@@ -63,6 +63,9 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0,
     UpdateButton(s, tl, x0,y0,x1,y0+row,text,SS_ACT_UPDATE_CHANNEL,false,u,ts);
     UpdateButton(s, tl, x0,y0+row+gap,x1,y0+2*row+gap,
                  st.version[0] ? st.version : "NO RELEASE SELECTED",SS_ACT_UPDATE_RELEASE,notes,u,ts);
+    char installed[64];
+    snprintf(installed, sizeof(installed), "INSTALLED: V%s", TMC_PORT_VERSION);
+    UpdateCenteredText(s, installed, cx, (int)(y0+59));
     const char* message = confirm ? "DOWNLOAD AND INSTALL" : st.message;
     if (!message[0]) message = "CHECK FOR UPDATE";
     // Long network errors are split at words inside the actual panel width.
@@ -76,13 +79,13 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0,
             split = strrchr(first,' ');
         }
     }
-    UpdateCenteredText(s,first,cx,(int)(y0+60));
-    if (second[0]) UpdateCenteredText(s,second,cx,(int)(y0+75));
+    UpdateCenteredText(s,first,cx,(int)(y0+76));
+    if (second[0]) UpdateCenteredText(s,second,cx,(int)(y0+91));
     else UpdateCenteredText(s,confirm ? "UNSAVED PROGRESS IS LOST" :
-                              notes ? "CHANGELOG ON TOP SCREEN" : "TAP RELEASE FOR CHANGELOG",cx,(int)(y0+78));
+                              notes ? "CHANGELOG ON TOP SCREEN" : "TAP RELEASE FOR CHANGELOG",cx,(int)(y0+94));
     if (notes && !confirm && !Updater_Busy()) {
-        UpdateButton(s,tl,x0,y0+99,x0+68,y0+120,"PREV",SS_ACT_UPDATE_PREV,false,u,ts);
-        UpdateButton(s,tl,x1-68,y0+99,x1,y0+120,"NEXT",SS_ACT_UPDATE_NEXT,false,u,ts);
+        UpdateButton(s,tl,x0,y0+112,x0+68,y0+133,"PREV",SS_ACT_UPDATE_PREV,false,u,ts);
+        UpdateButton(s,tl,x1-68,y0+112,x1,y0+133,"NEXT",SS_ACT_UPDATE_NEXT,false,u,ts);
     }
     if (st.state == UPDATE_DOWNLOADING || st.state == UPDATE_VERIFYING || st.state == UPDATE_INSTALLING) {
         FillRect(s,(int)x0,(int)(y0+103),(int)x1,(int)(y0+111),Port_SecondScreenTheme_Color(SSC_MENU_STONE_DARK));
