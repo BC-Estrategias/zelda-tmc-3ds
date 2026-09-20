@@ -25,12 +25,12 @@ fi
 export DEVKITPRO
 
 if [[ -z "${UPDATE_DEPS_ROOT:-}" ]]; then
-  UPDATE_DEPS_ROOT="${DEVKITPRO}/portlibs/3ds"
+  # This fork links RetroAchievements against its in-tree mbedTLS 3.x.
+  # Always build curl against that exact ABI instead of using a potentially
+  # incompatible devkitPro portlibs curl built against mbedTLS 2.x.
+  UPDATE_DEPS_ROOT="${ROOT}/build-3ds/update-deps/prefix"
   if [[ ! -f "${UPDATE_DEPS_ROOT}/lib/libcurl.a" || ! -f "${UPDATE_DEPS_ROOT}/lib/libjansson.a" ]]; then
-    UPDATE_DEPS_ROOT="${ROOT}/build-3ds/update-deps/prefix"
-    if [[ ! -f "${UPDATE_DEPS_ROOT}/lib/libcurl.a" || ! -f "${UPDATE_DEPS_ROOT}/lib/libjansson.a" ]]; then
-      python3 "${ROOT}/platform/3ds/tools/build_update_deps.py" "${ROOT}/build-3ds/update-deps"
-    fi
+    python3 "${ROOT}/platform/3ds/tools/build_update_deps.py" "${ROOT}/build-3ds/update-deps"
   fi
 fi
 
