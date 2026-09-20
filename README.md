@@ -1,4 +1,4 @@
-# The Legend of Zelda: The Minish Cap — Nintendo 3DS Edition
+# The Legend of Zelda: The Minish Cap — Definitive 3DS Edition
 
 <p align="center">
   <img width="100%" alt="The Minish Cap 3DS" src="https://github.com/user-attachments/assets/db99e777-12a2-4222-86c3-7c8f14062586" />
