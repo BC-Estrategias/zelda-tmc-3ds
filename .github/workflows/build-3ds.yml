@@ -69,11 +69,6 @@ jobs:
 
           downloads = [
               (
-                  "makerom.zip",
-                  "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip",
-                  "287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e",
-              ),
-              (
                   "bannertool.zip",
                   "https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip",
                   None,
@@ -93,9 +88,12 @@ jobs:
                   zf.extractall(out)
           PY
 
-          MAKEROM="$(find /tmp/tmc-3ds-tools/makerom -type f -name makerom -print -quit)"
+          git clone --depth 1 --branch makerom-v0.19.0 https://github.com/3DSGuy/Project_CTR.git /tmp/tmc-3ds-tools/Project_CTR
+          make -C /tmp/tmc-3ds-tools/Project_CTR/makerom deps
+          make -C /tmp/tmc-3ds-tools/Project_CTR/makerom
+          MAKEROM="/tmp/tmc-3ds-tools/Project_CTR/makerom/bin/makerom"
           BANNERTOOL="/tmp/tmc-3ds-tools/bannertool/linux-x86_64/bannertool"
-          test -n "$MAKEROM"
+          test -x "$MAKEROM"
           test -f "$BANNERTOOL"
           install -m 0755 "$MAKEROM" /usr/local/bin/makerom
           install -m 0755 "$BANNERTOOL" /usr/local/bin/bannertool
