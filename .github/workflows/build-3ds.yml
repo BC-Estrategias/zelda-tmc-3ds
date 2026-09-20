@@ -7,11 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      source_ref:
-        description: "Branch/ref to build (example: prerelease/v1.1-E4-heart-palette)"
-        required: true
-        default: "main"
-        type: string
       publish_release:
         description: "Create/update GitHub Release and upload CIA/3DSX/QR"
         required: true
@@ -35,7 +30,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
           submodules: false
 
@@ -107,7 +102,7 @@ jobs:
       - name: Checkout release notes
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Download compiled packages
@@ -155,7 +150,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build.outputs.version }}
-          target_commitish: ${{ inputs.source_ref }}
+          target_commitish: ${{ github.sha }}
           name: The Minish Cap 3DS v${{ needs.build.outputs.version }}
           body_path: release-assets/RELEASE_NOTES.md
           prerelease: ${{ contains(needs.build.outputs.version, '-E') }}
