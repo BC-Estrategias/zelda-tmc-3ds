@@ -250,6 +250,12 @@ void Port_Config_SetSecondScreenBackdrop(int style);
  * the panel row that writes it shows RESTART until it actually took. */
 bool Port_Config_GetSecondScreenSwap(void);
 void Port_Config_SetSecondScreenSwap(bool on);
+
+/* Bottom-screen UI language, independent of the ROM/game language.
+ * 0 = pt-BR, 1 = English, 2 = Español. */
+int Port_Config_GetUiLanguage(void);
+void Port_Config_SetUiLanguage(int language);
+void Port_Config_CycleUiLanguage(void);
 #ifdef TMC_3DS
 typedef enum {
     PORT_3DS_ASPECT_WIDE = 0,
