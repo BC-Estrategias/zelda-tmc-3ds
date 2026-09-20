@@ -6,6 +6,17 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Branch/ref to build (example: prerelease/v1.1-E4-heart-palette)"
+        required: true
+        default: "main"
+        type: string
+      publish_release:
+        description: "Create/update GitHub Release and upload CIA/3DSX/QR"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -16,10 +27,32 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
+          fetch-depth: 0
+          submodules: false
+
+      - name: Initialize required submodules
+        run: |
+          git submodule sync -- third_party/mbedtls third_party/rcheevos
+          git submodule update --init third_party/mbedtls third_party/rcheevos
+
+      - name: Read version
+        id: meta
+        shell: bash
+        run: |
+          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building v$VERSION"
 
       - name: Verify bundled build tools
         run: |
@@ -27,27 +60,109 @@ jobs:
             command -v "$tool"
           done
 
-      - name: Build universal CIA and 3DSX
+      - name: Build CIA and 3DSX
         run: ./platform/3ds/build.sh
 
       - name: Verify build outputs and legal files
+        shell: bash
         run: |
-          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          VERSION="${{ steps.meta.outputs.version }}"
           test ! -f baserom.gba
           ! git ls-files | grep -Ei '(^|/)([^/]*\.gba|[^/]*\.sav|[^/]*\.ppu1|tmc3ds\.log|bugreport_.*)(/|$)'
           ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
-          if [ -f "build-3ds/game/tmc-3ds-v${VERSION}.cia" ]; then
-            echo "CIA package was built."
-          else
-            echo "CIA package skipped because makerom/bannertool are unavailable in CI."
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "true" ]; then
+            test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
+          fi
+
+      - name: Create SHA256 checksums
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          cd build-3ds/game
+          sha256sum "tmc-3ds-v${VERSION}.3dsx" > "tmc-3ds-v${VERSION}-SHA256SUMS.txt"
+          if [ -f "tmc-3ds-v${VERSION}.cia" ]; then
+            sha256sum "tmc-3ds-v${VERSION}.cia" >> "tmc-3ds-v${VERSION}-SHA256SUMS.txt"
           fi
 
       - name: Upload packages
         uses: actions/upload-artifact@v7
         with:
-          name: tmc-3ds-packages
+          name: tmc-3ds-v${{ steps.meta.outputs.version }}
           if-no-files-found: error
           path: |
-            build-3ds/game/tmc-3ds-v*.3dsx
-            build-3ds/game/tmc-3ds-v*.cia
+            build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}.3dsx
+            build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}.cia
+            build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}-SHA256SUMS.txt
+
+  publish:
+    name: Publish release
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout release notes
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Download compiled packages
+        uses: actions/download-artifact@v8
+        with:
+          name: tmc-3ds-v${{ needs.build.outputs.version }}
+          path: release-assets
+
+      - name: Generate FBI QR
+        shell: bash
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          python3 -m pip install --user "qrcode[pil]"
+          python3 - <<'PY'
+          import os
+          import qrcode
+          version = os.environ["VERSION"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          url = f"https://github.com/{repo}/releases/download/v{version}/tmc-3ds-v{version}.cia"
+          qrcode.make(url).save(f"release-assets/tmc-3ds-v{version}-qr.png")
+          print(url)
+          PY
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          NOTES="RELEASE_NOTES_v${VERSION}.md"
+          if [ -f "$NOTES" ]; then
+            cp "$NOTES" release-assets/RELEASE_NOTES.md
+          else
+            {
+              echo "# The Minish Cap 3DS v${VERSION}"
+              echo
+              echo "Automated 3DS build."
+              echo
+              echo "The original ROM is not included."
+            } > release-assets/RELEASE_NOTES.md
+          fi
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          target_commitish: ${{ inputs.source_ref }}
+          name: The Minish Cap 3DS v${{ needs.build.outputs.version }}
+          body_path: release-assets/RELEASE_NOTES.md
+          prerelease: ${{ contains(needs.build.outputs.version, '-E') }}
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/tmc-3ds-v${{ needs.build.outputs.version }}.cia
+            release-assets/tmc-3ds-v${{ needs.build.outputs.version }}.3dsx
+            release-assets/tmc-3ds-v${{ needs.build.outputs.version }}-qr.png
+            release-assets/tmc-3ds-v${{ needs.build.outputs.version }}-SHA256SUMS.txt
