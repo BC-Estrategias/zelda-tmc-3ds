@@ -18,6 +18,6 @@
 2. Alterne entre **Português**, **English** e **Español**.
 3. Confirme que os menus mudam imediatamente e a opção persiste após reiniciar.
 4. Verifique palavras com acento, como **PORTUGUÊS**, **ATUALIZAÇÃO**, **CORREÇÃO**, **PRÓXIMA** e **ESPAÑOL**.
-5. Abra **Atualização** e confira este changelog na tela superior para validar os acentos.
+5. Abra **Atualização** e confira este changelog na tela superior para validar os acentos e a quebra de linhas UTF-8.
 
 A ROM original não está incluída.
