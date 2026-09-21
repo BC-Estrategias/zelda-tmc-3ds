@@ -206,6 +206,23 @@ const char* Port_SoftSlots_GetItemName(uint8_t itemId) {
     return ItemDisplayName(itemId);
 }
 
+int Port_SoftSlots_GetOwnedItemCount(void) {
+    int count = 0;
+    for (size_t i = 0; i < sizeof(kEquippable) / sizeof(kEquippable[0]); ++i) {
+        if (GetInventoryValue(kEquippable[i].id) == 1) ++count;
+    }
+    return count;
+}
+
+uint8_t Port_SoftSlots_GetOwnedItemId(int index) {
+    if (index < 0) return 0;
+    for (size_t i = 0; i < sizeof(kEquippable) / sizeof(kEquippable[0]); ++i) {
+        if (GetInventoryValue(kEquippable[i].id) != 1) continue;
+        if (index-- == 0) return kEquippable[i].id;
+    }
+    return 0;
+}
+
 const char* Port_SoftSlots_GetSlotLabel(int slot) {
     static char buf[64];
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return "?";
