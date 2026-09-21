@@ -6,6 +6,7 @@
 #include "port_rom.h"
 #include "port_retroachievements.h"
 #include "port_runtime_config.h"
+#include "port_softslots.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -115,6 +116,7 @@ int main(int argc, char** argv) {
     fclose(rom);
 
     Port_Config_Load("tmc3ds.ini");
+    Port_SoftSlots_Init();
     Port_LoadRom(romPath);
     Port_RetroAchievements_IdentifyLoadedRom();
     Port_RetroAchievements_AutoLogin();
