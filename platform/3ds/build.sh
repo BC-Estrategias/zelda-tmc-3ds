@@ -3,6 +3,24 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/version.txt")"
+
+# Map the human version (e.g. 1.2-E5) to the CIA/TMD title version.
+# makerom does NOT derive this from the RSF RemasterVersion field.
+CIA_MAJOR=0
+CIA_MINOR=0
+CIA_MICRO=0
+if [[ "${VERSION}" =~ ^([0-9]+)\.([0-9]+)(-E([0-9]+))?$ ]]; then
+  CIA_MAJOR="${BASH_REMATCH[1]}"
+  CIA_MINOR="${BASH_REMATCH[2]}"
+  CIA_MICRO="${BASH_REMATCH[4]:-0}"
+else
+  echo "Unsupported 3DS version format for CIA title version: ${VERSION}" >&2
+  exit 1
+fi
+if (( CIA_MAJOR > 63 || CIA_MINOR > 63 || CIA_MICRO > 15 )); then
+  echo "CIA title version out of makerom range: ${CIA_MAJOR}.${CIA_MINOR}.${CIA_MICRO}" >&2
+  exit 1
+fi
 DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
 BUILD="${ROOT}/build-3ds/game"
 TOOLS_ROOT="${TMC3DS_TOOLS_ROOT:-${ROOT}/../Tools/bin}"
@@ -82,6 +100,7 @@ cd "${ROOT}"
 "${MAKEROM}" -f cia -o "${BUILD}/tmc-3ds-v${VERSION}.cia" \
   -DAPP_ROMFS="${BUILD#"${ROOT}/"}/romfs" \
   -rsf "${ROOT}/platform/3ds/cia/tmc3ds.rsf" -target t -exefslogo \
+  -major "${CIA_MAJOR}" -minor "${CIA_MINOR}" -micro "${CIA_MICRO}" \
   -elf "${BUILD}/tmc-3ds.elf" -icon "${BUILD}/tmc-3ds.icn" \
   -banner "${BUILD}/tmc-3ds.bnr"
 )
