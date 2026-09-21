@@ -112,7 +112,8 @@ jobs:
           ! git ls-files | grep -Ei '(^|/)([^/]*\.gba|[^/]*\.sav|[^/]*\.ppu1|tmc3ds\.log|bugreport_.*)(/|$)'
           ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "true" ]; then
+          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "true" ]; } || \
+             { [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/heads/prerelease/* ]] && [[ "${{ github.event.head_commit.message }}" == release:* ]]; }; then
             test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
           fi
 
@@ -136,6 +137,29 @@ jobs:
             build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}.cia
             build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}-SHA256SUMS.txt
 
+  manifest-tests:
+    name: Updater manifest tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Install host test dependency
+        run: sudo apt-get update && sudo apt-get install -y libjansson-dev
+
+      - name: Build and run updater manifest tests
+        shell: bash
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iplatform/3ds/source \
+            platform/3ds/source/update_manifest.c \
+            platform/3ds/tests/update_manifest_test.c \
+            -ljansson -o /tmp/update_manifest_test
+          /tmp/update_manifest_test
+
   publish:
     name: Publish release
     if: >-
@@ -143,7 +167,7 @@ jobs:
       (github.event_name == 'push' &&
        startsWith(github.ref, 'refs/heads/prerelease/') &&
        startsWith(github.event.head_commit.message, 'release:'))
-    needs: build
+    needs: [build, manifest-tests]
     runs-on: ubuntu-latest
     permissions:
       contents: write
