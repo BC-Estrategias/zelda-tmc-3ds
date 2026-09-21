@@ -43,7 +43,7 @@ This edition is based on the work of **EstebanPdN/zelda-tmc-3ds**, **Project Pic
 | Native CIA / 3DSX | ✅ |
 | New 3DS / New 2DS XL | ✅ |
 | Old 3DS / Nintendo 2DS | ✅ |
-| Full View 400×240 | ✅ New 3DS / New 2DS XL |
+| Pixel Perfect Full View 400×240 | ✅ New 3DS / New 2DS XL |
 | Dual-screen interface | ✅ |
 | Quick Save / Quick Load | ✅ |
 | Link speed 1× / 1.5× / 2× | ✅ |
@@ -221,7 +221,7 @@ Esta edição parte do trabalho de **EstebanPdN/zelda-tmc-3ds**, **Project Picor
 | CIA / 3DSX nativos | ✅ |
 | New 3DS / New 2DS XL | ✅ |
 | Old 3DS / Nintendo 2DS | ✅ |
-| Full View 400×240 | ✅ New 3DS / New 2DS XL |
+| Pixel Perfect Full View 400×240 | ✅ New 3DS / New 2DS XL |
 | Interface em duas telas | ✅ |
 | Quick Save / Quick Load | ✅ |
 | Velocidade do Link 1× / 1,5× / 2× | ✅ |
