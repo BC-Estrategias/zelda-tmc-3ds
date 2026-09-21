@@ -46,6 +46,8 @@ const char* Port_SoftSlots_SlotName(int slot);
  * Stable pointer; caller does not free. */
 const char* Port_SoftSlots_GetSlotLabel(int slot);
 const char* Port_SoftSlots_GetItemName(uint8_t itemId);
+int Port_SoftSlots_GetOwnedItemCount(void);
+uint8_t Port_SoftSlots_GetOwnedItemId(int index);
 
 /* Cycle the assignment in `slot` to the next/previous item the player
  * actually owns (`direction` is +1 or -1). Wraps through "unassigned"
