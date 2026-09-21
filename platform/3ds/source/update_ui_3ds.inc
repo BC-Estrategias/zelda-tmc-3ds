@@ -20,10 +20,45 @@ bool Port_SecondScreen_3DS_UpdateOpen(void) {
     return open;
 }
 
+static void UpdateUppercaseUtf8(char* text) {
+    if (!text) return;
+    for (unsigned char* p = (unsigned char*)text; *p;) {
+        if (*p < 0x80) {
+            *p = (unsigned char)toupper(*p);
+            ++p;
+            continue;
+        }
+        if (p[0] == 0xC3 && p[1]) {
+            switch (p[1]) {
+                case 0xA0: p[1] = 0x80; break; /* à -> À */
+                case 0xA1: p[1] = 0x81; break; /* á -> Á */
+                case 0xA2: p[1] = 0x82; break; /* â -> Â */
+                case 0xA3: p[1] = 0x83; break; /* ã -> Ã */
+                case 0xA4: p[1] = 0x84; break; /* ä -> Ä */
+                case 0xA7: p[1] = 0x87; break; /* ç -> Ç */
+                case 0xA9: p[1] = 0x89; break; /* é -> É */
+                case 0xAA: p[1] = 0x8A; break; /* ê -> Ê */
+                case 0xAD: p[1] = 0x8D; break; /* í -> Í */
+                case 0xB1: p[1] = 0x91; break; /* ñ -> Ñ */
+                case 0xB3: p[1] = 0x93; break; /* ó -> Ó */
+                case 0xB4: p[1] = 0x94; break; /* ô -> Ô */
+                case 0xB5: p[1] = 0x95; break; /* õ -> Õ */
+                case 0xB6: p[1] = 0x96; break; /* ö -> Ö */
+                case 0xBA: p[1] = 0x9A; break; /* ú -> Ú */
+                case 0xBC: p[1] = 0x9C; break; /* ü -> Ü */
+                default: break;
+            }
+            p += 2;
+            continue;
+        }
+        ++p;
+    }
+}
+
 static void UpdateSmallText(const SSurf* s, const char* text, int x, int y, int style) {
     char label[128];
     snprintf(label,sizeof(label),"%s",text);
-    for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
+    UpdateUppercaseUtf8(label);
     text=label;
     if (!Port_SecondScreenTheme_DrawBigText(s->px, s->w, s->h, s->stride, x, y, 1, style, text))
         DrawTextStr(s, text, x, y + 4, 1, Port_SecondScreenTheme_Color(SSC_MENU_INK), 0);
@@ -206,7 +241,7 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
     } else {
         snprintf(title, sizeof(title), "%s", UiText3("ATUALIZAÇÃO", "UPDATE", "ACTUALIZACIÓN"));
     }
-    for(char* c=title;*c;++c) *c=(char)toupper((unsigned char)*c);
+    UpdateUppercaseUtf8(title);
     DrawPanelHeaderChip(&s,200,14,title,1,1.0f/3);
     Port_SecondScreenTheme_DrawWell(pixels,400,240,stride,17,47,366,165,1);
     for (unsigned i=page*9;i<count && i<(page+1)*9;i++)
