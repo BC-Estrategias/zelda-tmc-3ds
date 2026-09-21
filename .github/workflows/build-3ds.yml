@@ -161,6 +161,14 @@ jobs:
           name: tmc-3ds-v${{ needs.build.outputs.version }}
           path: release-assets
 
+      - name: Prepare permanent release aliases
+        shell: bash
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          cp "release-assets/tmc-3ds-v${VERSION}.cia" "release-assets/tmc-3ds-latest.cia"
+          cp "release-assets/tmc-3ds-v${VERSION}.3dsx" "release-assets/tmc-3ds-latest.3dsx"
+          cp "release-assets/tmc-3ds-v${VERSION}-SHA256SUMS.txt" "release-assets/tmc-3ds-latest-SHA256SUMS.txt"
+
       - name: Generate FBI QR
         shell: bash
         run: |
@@ -171,9 +179,12 @@ jobs:
           import qrcode
           version = os.environ["VERSION"]
           repo = os.environ["GITHUB_REPOSITORY"]
-          url = f"https://github.com/{repo}/releases/download/v{version}/tmc-3ds-v{version}.cia"
-          qrcode.make(url).save(f"release-assets/tmc-3ds-v{version}-qr.png")
-          print(url)
+          version_url = f"https://github.com/{repo}/releases/download/v{version}/tmc-3ds-v{version}.cia"
+          latest_url = f"https://github.com/{repo}/releases/latest/download/tmc-3ds-latest.cia"
+          qrcode.make(version_url).save(f"release-assets/tmc-3ds-v{version}-qr.png")
+          qrcode.make(latest_url).save("release-assets/tmc-3ds-latest-qr.png")
+          print(version_url)
+          print(latest_url)
           PY
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -204,10 +215,14 @@ jobs:
           name: The Minish Cap 3DS v${{ needs.build.outputs.version }}
           body_path: release-assets/RELEASE_NOTES.md
           prerelease: ${{ contains(needs.build.outputs.version, '-E') }}
-          make_latest: false
+          make_latest: ${{ contains(needs.build.outputs.version, '-E') && 'false' || 'true' }}
           fail_on_unmatched_files: true
           files: |
             release-assets/tmc-3ds-v${{ needs.build.outputs.version }}.cia
             release-assets/tmc-3ds-v${{ needs.build.outputs.version }}.3dsx
             release-assets/tmc-3ds-v${{ needs.build.outputs.version }}-qr.png
             release-assets/tmc-3ds-v${{ needs.build.outputs.version }}-SHA256SUMS.txt
+            release-assets/tmc-3ds-latest.cia
+            release-assets/tmc-3ds-latest.3dsx
+            release-assets/tmc-3ds-latest-qr.png
+            release-assets/tmc-3ds-latest-SHA256SUMS.txt
