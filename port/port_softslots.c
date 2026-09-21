@@ -120,11 +120,13 @@ uint8_t Port_SoftSlots_GetEffectiveBItem(uint8_t saved) {
 }
 
 uint8_t Port_SoftSlots_GetAssignment(int slot) {
+    Port_SoftSlots_Init();
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return 0;
     return sAssignments[slot];
 }
 
 void Port_SoftSlots_SetAssignment(int slot, uint8_t itemId) {
+    Port_SoftSlots_Init();
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return;
     sAssignments[slot] = itemId;
     Port_SoftSlots_Save();
