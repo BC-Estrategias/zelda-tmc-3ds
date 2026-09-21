@@ -44,7 +44,7 @@ AccessControlInfo:
   RunnableOnSleep: false
   SpecialMemoryArrange: true
   # Full View's 400x240 CPU renderer needs the New 3DS resource profile.
-  # Full View and the current stable package target New Nintendo 3DS hardware.
+  # Full View uses the New 3DS resource profile when available; Old 3DS falls back to the compatible non-Full-View path.
   SystemModeExt: 124MB
   CpuSpeed: 804MHz
   EnableL2Cache: true
