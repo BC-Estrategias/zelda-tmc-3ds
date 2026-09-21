@@ -60,9 +60,18 @@ static bool open_download(Transfer *t) {
   if (!t->data) return false;
   t->capacity = UPDATE_IO_SIZE;
   t->file = fopen(UPDATE_PART, "wb");
-  if (!t->file) return false;
+  if (!t->file) {
+    free(t->data); t->data = NULL; t->capacity = 0;
+    return false;
+  }
   // Our explicit buffer sets the write size independently of newlib's BUFSIZ.
-  return setvbuf(t->file, NULL, _IONBF, 0) == 0;
+  if (setvbuf(t->file, NULL, _IONBF, 0) != 0) {
+    fclose(t->file); t->file = NULL;
+    free(t->data); t->data = NULL; t->capacity = 0;
+    remove(UPDATE_PART);
+    return false;
+  }
+  return true;
 }
 static bool flush_download(Transfer *t) {
   if (cancelled() || t->io_error) return false;
