@@ -20,5 +20,6 @@
 3. Abra Atualização e confira centralização e acentos do texto.
 4. Confirme que o changelog abre normalmente.
 5. Faça um Quick Save / Quick Load e teste alguns minutos de gameplay em Full View.
+6. Abra o updater novamente e confirme que a E6 aparece como instalada/atualizada.
 
 A ROM original não está incluída.
