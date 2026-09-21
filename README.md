@@ -46,6 +46,7 @@ This edition is based on the work of **EstebanPdN/zelda-tmc-3ds**, **Project Pic
 | Pixel Perfect Full View 400×240 | ✅ New 3DS / New 2DS XL |
 | Dual-screen interface | ✅ |
 | Quick Save / Quick Load | ✅ |
+| Configurable button mapping | ✅ |
 | Link speed 1× / 1.5× / 2× | ✅ |
 | Turbo | ✅ |
 | Cheats and QoL options | ✅ |
@@ -95,15 +96,34 @@ Press **X** during gameplay to cycle through the main bottom-screen tabs.
 - Optional direct boot to file select
 - Configurable turbo
 
-### Quick Save / Quick Load
+### Configurable controls
 
-| Shortcut | Action |
+The 3DS controls can be mapped directly from **Settings > Controls**.
+
+On **New Nintendo 3DS / New Nintendo 2DS XL**, the configurable inputs are **X, Y, ZL, ZR and C-Stick**. On **Old Nintendo 3DS / Nintendo 2DS**, only **X and Y** are shown.
+
+Each input can be assigned to:
+
+- None
+- Cycle bottom-screen tabs
+- Turbo
+- Item shortcut
+- Save State
+- Load State
+
+Item shortcuts use the game's original item logic and do **not** change the visible A/B equipment. Held items such as the shield, bow, Gust Jar and Pegasus Boots keep their normal hold/release behavior.
+
+Default New 3DS mapping:
+
+| Input | Default |
 | --- | --- |
-| **ZL + X** | Quick Save |
-| **ZL + Y** | Quick Load confirmation |
-| **ZR** | Hold Turbo on New 3DS |
-| **C-Stick** | Turbo |
 | **X** | Cycle bottom-screen tabs |
+| **Y** | None |
+| **ZL** | None |
+| **ZR** | Turbo |
+| **C-Stick** | Turbo |
+
+Mappings and selected item shortcuts persist between sessions.
 
 ### RetroAchievements
 
@@ -224,6 +244,7 @@ Esta edição parte do trabalho de **EstebanPdN/zelda-tmc-3ds**, **Project Picor
 | Pixel Perfect Full View 400×240 | ✅ New 3DS / New 2DS XL |
 | Interface em duas telas | ✅ |
 | Quick Save / Quick Load | ✅ |
+| Mapeamento configurável de botões | ✅ |
 | Velocidade do Link 1× / 1,5× / 2× | ✅ |
 | Turbo | ✅ |
 | Cheats e melhorias de qualidade de vida | ✅ |
@@ -273,15 +294,34 @@ Durante o jogo, pressione **X** para alternar entre as principais abas da tela i
 - Inicialização opcional direto na seleção de arquivo
 - Turbo configurável
 
-### Quick Save / Quick Load
+### Controles configuráveis
 
-| Atalho | Ação |
+Os controles podem ser mapeados diretamente em **Ajustes > Controles**.
+
+No **New Nintendo 3DS / New Nintendo 2DS XL**, os comandos configuráveis são **X, Y, ZL, ZR e C-Stick**. No **Old Nintendo 3DS / Nintendo 2DS**, aparecem apenas **X e Y**.
+
+Cada comando pode receber:
+
+- Nenhuma ação
+- Alternar abas da tela inferior
+- Turbo
+- Atalho de item
+- Save State
+- Load State
+
+Os atalhos de item usam a lógica original do jogo e **não alteram os equipamentos visíveis em A/B**. Itens de segurar, como escudo, arco, Gust Jar e Pegasus Boots, mantêm o comportamento normal de pressionar/segurar/soltar.
+
+Mapeamento padrão no New 3DS:
+
+| Comando | Padrão |
 | --- | --- |
-| **ZL + X** | Quick Save |
-| **ZL + Y** | Confirmação de Quick Load |
-| **ZR** | Segurar Turbo no New 3DS |
-| **C-Stick** | Turbo |
 | **X** | Alternar abas da tela inferior |
+| **Y** | Nenhuma ação |
+| **ZL** | Nenhuma ação |
+| **ZR** | Turbo |
+| **C-Stick** | Turbo |
+
+Os mapeamentos e os itens selecionados permanecem salvos entre sessões.
 
 ### RetroAchievements
 
