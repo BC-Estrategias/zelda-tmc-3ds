@@ -67,7 +67,7 @@ static void UpdateSmallText(const SSurf* s, const char* text, int x, int y, int 
 static int UpdateTextWidth(const char* text) {
     char label[128];
     snprintf(label,sizeof(label),"%s",text);
-    for (char* c=label;*c;++c) *c=(char)toupper((unsigned char)*c);
+    UpdateUppercaseUtf8(label);
     text=label;
     int w = Port_SecondScreenTheme_BigTextWidth(text, 1);
     return w ? w : TextWidthPx(text, 1);
