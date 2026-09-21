@@ -95,6 +95,7 @@ void Platform3DS_MarkFrameDiscontinuity(Old3DSFramePacerDiscontinuity reason);
 bool Platform3DS_BeginFrameBoundary(void);
 void Platform3DS_EndFrameBoundary(void);
 void Platform3DS_PumpWithoutVBlank(void);
+bool Platform3DS_CStickHeld(void);
 bool Platform3DS_TurboHeld(void);
 unsigned Platform3DS_TurboMultiplier(void);
 void Platform3DS_SetTurboMultiplier(unsigned multiplier);
