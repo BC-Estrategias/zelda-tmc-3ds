@@ -20,7 +20,7 @@ static bool sCStickHeld;
 static bool sQuickDumpRequested;
 static bool sQuickStateSaveRequested;
 static bool sLoadConfirmButtonConsumed;
-static bool sStateShortcutWasHeld;
+static bool sCStickActionWasHeld;
 static bool sQuickDumpComboWasHeld;
 static bool sRunning;
 static bool sIsNew3DS;
@@ -658,8 +658,8 @@ static void PollInput(void) {
     if (sLoadConfirmButtonConsumed && (sHeld & (KEY_A | KEY_B)) == 0u) {
         sLoadConfirmButtonConsumed = false;
     }
-    const bool cstickPressed = sCStickHeld && !sStateShortcutWasHeld;
-    sStateShortcutWasHeld = sCStickHeld;
+    const bool cstickPressed = sCStickHeld && !sCStickActionWasHeld;
+    sCStickActionWasHeld = sCStickHeld;
 
     if (!loadConfirmation) {
         const bool pressed[PORT_3DS_MAP_COUNT] = {
