@@ -82,13 +82,13 @@ O multiplicador de turbo pode ser configurado entre **2× e 5×**.
 
 O Project Picori Randomizer também está integrado ao menu do 3DS, com perfil de save separado do jogo normal e opções próprias de lógica, entradas, Kinstones, itens e cosméticos.
 
-### Desempenho
+### Desempenho e hardware
 
-O port escolhe automaticamente um perfil de acordo com o aparelho.
+A build estável atual é voltada ao **New Nintendo 3DS / New Nintendo 2DS XL**.
 
-**New Nintendo 3DS:** usa os recursos extras do hardware, incluindo modo de 804 MHz, cache L2, núcleo adicional e o caminho acelerado de apresentação disponível para o port.
+Ela usa os recursos extras desse hardware, incluindo modo de 804 MHz, cache L2, núcleo adicional e o caminho acelerado de apresentação disponível para o port.
 
-**Old Nintendo 3DS:** utiliza um perfil mais econômico, com otimizações de áudio/renderização e apresentação adaptativa para evitar que quedas visuais desacelerem toda a lógica do jogo.
+O **Old Nintendo 3DS / 2DS não é suportado por esta build estável**.
 
 ## Modos de imagem
 
@@ -121,7 +121,7 @@ Remote Install > Scan QR Code
 e escaneie:
 
 <p align="center">
-  <img width="320" alt="QR Code para instalação do The Minish Cap 3DS" src="https://github.com/BC-Estrategias/zelda-tmc-3ds/releases/download/v1.0.1/tmc-3ds-v1.0.1-qr.png" />
+  <img width="320" alt="QR Code para instalação do The Minish Cap 3DS" src="https://github.com/BC-Estrategias/zelda-tmc-3ds/releases/download/v1.1/tmc-3ds-v1.1-qr.png" />
 </p>
 
 ### 3DSX
