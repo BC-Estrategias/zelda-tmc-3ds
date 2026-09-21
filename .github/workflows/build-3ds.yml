@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'prerelease/**'
+      - 'release/**'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -112,7 +113,8 @@ jobs:
           ! git ls-files | grep -Ei '(^|/)([^/]*\.gba|[^/]*\.sav|[^/]*\.ppu1|tmc3ds\.log|bugreport_.*)(/|$)'
           ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "true" ]; then
+          if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "true" ]; } || \
+             { [ "${{ github.event_name }}" = "push" ] && { [[ "${{ github.ref }}" == refs/heads/prerelease/* ]] || [[ "${{ github.ref }}" == refs/heads/release/* ]]; } && [[ "${{ github.event.head_commit.message }}" == release:* ]]; }; then
             test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
           fi
 
@@ -136,14 +138,38 @@ jobs:
             build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}.cia
             build-3ds/game/tmc-3ds-v${{ steps.meta.outputs.version }}-SHA256SUMS.txt
 
+  manifest-tests:
+    name: Updater manifest tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Install host test dependency
+        run: sudo apt-get update && sudo apt-get install -y libjansson-dev
+
+      - name: Build and run updater manifest tests
+        shell: bash
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iplatform/3ds/source \
+            platform/3ds/source/update_manifest.c \
+            platform/3ds/tests/update_manifest_test.c \
+            -ljansson -o /tmp/update_manifest_test
+          /tmp/update_manifest_test
+
   publish:
     name: Publish release
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
       (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/heads/prerelease/') &&
+       (startsWith(github.ref, 'refs/heads/prerelease/') ||
+        startsWith(github.ref, 'refs/heads/release/')) &&
        startsWith(github.event.head_commit.message, 'release:'))
-    needs: build
+    needs: [build, manifest-tests]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -199,7 +225,7 @@ jobs:
             cp "$NOTES" release-assets/RELEASE_NOTES.md
           else
             {
-              echo "# The Minish Cap 3DS v${VERSION}"
+              echo "# v${VERSION}"
               echo
               echo "Automated 3DS build."
               echo
@@ -207,12 +233,28 @@ jobs:
             } > release-assets/RELEASE_NOTES.md
           fi
 
+          {
+            echo
+            echo "## Install with FBI"
+            echo
+            echo 'In FBI: `Remote Install > Scan QR Code`'
+            echo
+            echo '<p align="center">'
+            echo "  <a href=\"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}.cia\">"
+            echo "    <img width=\"320\" alt=\"FBI QR Code for v${VERSION}\" src=\"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}-qr.png\" />"
+            echo "  </a>"
+            echo "</p>"
+            echo
+            echo "- [Download CIA](https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}.cia)"
+            echo "- [Download 3DSX](https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}.3dsx)"
+          } >> release-assets/RELEASE_NOTES.md
+
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.build.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: The Minish Cap 3DS v${{ needs.build.outputs.version }}
+          name: v${{ needs.build.outputs.version }}
           body_path: release-assets/RELEASE_NOTES.md
           prerelease: ${{ contains(needs.build.outputs.version, '-E') }}
           make_latest: ${{ contains(needs.build.outputs.version, '-E') && 'false' || 'true' }}
@@ -226,3 +268,33 @@ jobs:
             release-assets/tmc-3ds-latest.3dsx
             release-assets/tmc-3ds-latest-qr.png
             release-assets/tmc-3ds-latest-SHA256SUMS.txt
+
+
+      - name: Clean prerelease history after stable release
+        if: ${{ !contains(needs.build.outputs.version, '-E') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          # Keep the public Releases page focused on stable builds.
+          # Normalize stable release titles, then remove experimental E-series
+          # release entries and their tags only after the new stable release
+          # has been published successfully.
+          for tag in v1.0.1 v1.1 "v${VERSION}"; do
+            gh release edit "${tag}" --title "${tag}" --repo "${GITHUB_REPOSITORY}" 2>/dev/null || true
+          done
+
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.prerelease == true) | .tag_name' |
+          while IFS= read -r tag; do
+            case "${tag}" in
+              v*-E*)
+                echo "Removing prerelease ${tag}"
+                if ! gh release delete "${tag}" --cleanup-tag --yes --repo "${GITHUB_REPOSITORY}"; then
+                  echo "Release ${tag} was already absent; cleaning tag if present."
+                  gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" 2>/dev/null || true
+                fi
+                ;;
+            esac
+          done
