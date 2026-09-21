@@ -40,6 +40,13 @@ static bool sVsync = true;
 static _Atomic float sVolume = 1.0f;
 static _Atomic int sBackdrop;
 static _Atomic unsigned sTurboMultiplier = 5;
+static _Atomic int sButtonActions[PORT_3DS_MAP_COUNT] = {
+    PORT_3DS_ACTION_TABS,
+    PORT_3DS_ACTION_NONE,
+    PORT_3DS_ACTION_NONE,
+    PORT_3DS_ACTION_TURBO,
+    PORT_3DS_ACTION_TURBO,
+};
 static _Atomic bool sRandoEnabled;
 static bool sRandoGlitchless = true;
 static bool sRandoObscure;
@@ -101,6 +108,11 @@ static void SaveConfig(void) {
     fprintf(file, "master_volume=%.2f\n", (double)sVolume);
     fprintf(file, "panel_backdrop=%d\n", sBackdrop);
     fprintf(file, "turbo_multiplier=%u\n", sTurboMultiplier);
+    fprintf(file, "button_x_action=%d\n", sButtonActions[PORT_3DS_MAP_X]);
+    fprintf(file, "button_y_action=%d\n", sButtonActions[PORT_3DS_MAP_Y]);
+    fprintf(file, "button_zl_action=%d\n", sButtonActions[PORT_3DS_MAP_ZL]);
+    fprintf(file, "button_zr_action=%d\n", sButtonActions[PORT_3DS_MAP_ZR]);
+    fprintf(file, "button_cstick_action=%d\n", sButtonActions[PORT_3DS_MAP_CSTICK]);
     fprintf(file, "randomizer=%u\n", sRandoEnabled ? 1u : 0u);
     fprintf(file, "rando_glitchless=%u\n", sRandoGlitchless ? 1u : 0u);
     fprintf(file, "rando_obscure=%u\n", sRandoObscure ? 1u : 0u);
@@ -188,6 +200,11 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "master_volume") == 0) sVolume = strtof(value, NULL);
             else if (strcmp(key, "panel_backdrop") == 0) sBackdrop = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "turbo_multiplier") == 0) sTurboMultiplier = (unsigned)strtoul(value, NULL, 10);
+            else if (strcmp(key, "button_x_action") == 0) sButtonActions[PORT_3DS_MAP_X] = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "button_y_action") == 0) sButtonActions[PORT_3DS_MAP_Y] = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "button_zl_action") == 0) sButtonActions[PORT_3DS_MAP_ZL] = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "button_zr_action") == 0) sButtonActions[PORT_3DS_MAP_ZR] = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "button_cstick_action") == 0) sButtonActions[PORT_3DS_MAP_CSTICK] = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "randomizer") == 0) sRandoEnabled = ParseBool(value);
             else if (strcmp(key, "rando_glitchless") == 0) sRandoGlitchless = ParseBool(value);
             else if (strcmp(key, "rando_obscure") == 0) sRandoObscure = ParseBool(value);
@@ -215,6 +232,9 @@ void Port_Config_Load(const char* path) {
     if (sVolume > 1.0f) sVolume = 1.0f;
     if (sBackdrop < 0 || sBackdrop > 6) sBackdrop = 0;
     if (sTurboMultiplier < 2 || sTurboMultiplier > 5) sTurboMultiplier = 5;
+    for (int i = 0; i < PORT_3DS_MAP_COUNT; ++i)
+        if (sButtonActions[i] < PORT_3DS_ACTION_NONE || sButtonActions[i] >= PORT_3DS_ACTION_COUNT)
+            sButtonActions[i] = PORT_3DS_ACTION_NONE;
     if (sPlayerSpeedMode > 2) sPlayerSpeedMode = 0;
     if (sRandoItemPool < 0 || sRandoItemPool >= RANDO_ITEM_POOL_COUNT) sRandoItemPool = RANDO_ITEM_POOL_NORMAL;
     if (sRandoTunicColor < 0 || sRandoTunicColor > 6) sRandoTunicColor = 0;
@@ -433,31 +453,25 @@ void Port_Config_OpenGamepads(void) {}
 void Port_Config_CloseGamepads(void) {}
 
 bool Port_Config_InputPressed(PortInput input) {
-    if (input == PORT_INPUT_ROLL_ATTACK) {
-        enum { KEY_3DS_Y = 1u << 11, KEY_3DS_ZL = 1u << 14 };
-        const uint32_t keys = Platform3DS_KeysHeld();
-        /* ZL+Y is the load-state chord, never a macro command. */
-        return (keys & KEY_3DS_Y) != 0u && (keys & KEY_3DS_ZL) == 0u;
-    }
+    if (input == PORT_INPUT_ROLL_ATTACK) return false;
     const u16 keys = (u16)(~Platform3DS_ReadKeyInput()) & 0x03ff;
     static const u16 masks[10] = { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 };
     return input < 10 && (keys & masks[input]) != 0;
 }
 bool Port_Config_InputEdgePressed(PortInput input) {
-    if (input == PORT_INPUT_ROLL_ATTACK) {
-        enum { KEY_3DS_Y = 1u << 11, KEY_3DS_ZL = 1u << 14 };
-        const uint32_t held = Platform3DS_KeysHeld();
-        const uint32_t down = Platform3DS_KeysDown();
-        return (down & KEY_3DS_Y) != 0u && (held & KEY_3DS_ZL) == 0u;
-    }
+    if (input == PORT_INPUT_ROLL_ATTACK) return false;
     const u16 keys = (u16)(~Platform3DS_ReadKeyDownInput()) & 0x03ff;
     static const u16 masks[10] = { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 };
     return input < 10 && (keys & masks[input]) != 0;
 }
 bool Port_Config_SoftSlotPressed(int slot) {
+    if (slot < 0 || slot >= PORT_3DS_MAP_COUNT) return false;
+    if (Port_Config_Get3DSButtonAction(slot) != PORT_3DS_ACTION_ITEM) return false;
+    if (!Platform3DS_IsNew3DS() && slot >= PORT_3DS_MAP_ZL) return false;
+    if (slot == PORT_3DS_MAP_CSTICK) return Platform3DS_CStickHeld();
     const u32 held = (u32)Platform3DS_KeysHeld();
     static const u32 masks[4] = { 1u << 10, 1u << 11, 1u << 14, 1u << 15 };
-    return slot >= 0 && slot < 4 && (held & masks[slot]) != 0;
+    return slot < 4 && (held & masks[slot]) != 0;
 }
 bool Port_Config_GetLeftStick(float* outX, float* outY) {
     float x = 0.0f;
@@ -477,6 +491,27 @@ void Port_Config_SetPreferredRegion(int region) { (void)region; }
 int Port_Config_PreferredLanguage(void) { return -1; }
 void Port_Config_SetPreferredLanguage(int lang) { (void)lang; }
 void Port_Config_SetPortSettingsMenuEnabled(bool enabled) { sPortSettings = enabled; }
+
+int Port_Config_Get3DSButtonAction(int button) {
+    if (button < 0 || button >= PORT_3DS_MAP_COUNT) return PORT_3DS_ACTION_NONE;
+    return sButtonActions[button];
+}
+void Port_Config_Set3DSButtonAction(int button, int action) {
+    if (button < 0 || button >= PORT_3DS_MAP_COUNT) return;
+    if (action < PORT_3DS_ACTION_NONE || action >= PORT_3DS_ACTION_COUNT) action = PORT_3DS_ACTION_NONE;
+    sButtonActions[button] = action;
+    SaveConfig();
+}
+void Port_Config_Cycle3DSButtonAction(int button) {
+    if (button < 0 || button >= PORT_3DS_MAP_COUNT) return;
+    Port_Config_Set3DSButtonAction(button, (sButtonActions[button] + 1) % PORT_3DS_ACTION_COUNT);
+}
+const char* Port_Config_Get3DSButtonActionName(int action) {
+    static const char* const names[PORT_3DS_ACTION_COUNT] = {
+        "NONE", "TABS", "TURBO", "ITEM", "SAVE", "LOAD"
+    };
+    return (action >= 0 && action < PORT_3DS_ACTION_COUNT) ? names[action] : "NONE";
+}
 
 bool Port_Config_AutosaveEnabled(void) { return sAutosave; }
 void Port_Config_SetAutosaveEnabled(bool enabled) { sAutosave = enabled; SaveConfig(); }
