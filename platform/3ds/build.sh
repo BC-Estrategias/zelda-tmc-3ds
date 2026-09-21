@@ -4,15 +4,30 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="$(tr -d '\r\n' < "${ROOT}/platform/3ds/version.txt")"
 
-# Map the human version (e.g. 1.2-E5) to the CIA/TMD title version.
-# makerom does NOT derive this from the RSF RemasterVersion field.
+# Map the human version to a monotonic CIA/TMD title version.
+# Stable x.y releases use minor=y*16, micro=0. Pre-releases x.y-E<n>
+# consume the 255 title-version steps between stable x.(y-1) and x.y.
+# Example: 1.2-E5 -> CIA 1.16.5; stable 1.2 -> CIA 1.32.0.
 CIA_MAJOR=0
 CIA_MINOR=0
 CIA_MICRO=0
-if [[ "${VERSION}" =~ ^([0-9]+)\.([0-9]+)(-E([0-9]+))?$ ]]; then
-  CIA_MAJOR="${BASH_REMATCH[1]}"
-  CIA_MINOR="${BASH_REMATCH[2]}"
-  CIA_MICRO="${BASH_REMATCH[4]:-0}"
+if [[ "${VERSION}" =~ ^([0-9]+)\.([0-9]+)-E([0-9]+)$ ]]; then
+  HUMAN_MAJOR="${BASH_REMATCH[1]}"
+  HUMAN_MINOR="${BASH_REMATCH[2]}"
+  EXPERIMENT="${BASH_REMATCH[3]}"
+  if (( HUMAN_MINOR < 1 || EXPERIMENT < 1 || EXPERIMENT > 255 )); then
+    echo "Unsupported prerelease version for CIA title version: ${VERSION}" >&2
+    exit 1
+  fi
+  CIA_MAJOR="${HUMAN_MAJOR}"
+  CIA_MINOR=$(( (HUMAN_MINOR - 1) * 16 + EXPERIMENT / 16 ))
+  CIA_MICRO=$(( EXPERIMENT % 16 ))
+elif [[ "${VERSION}" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+  HUMAN_MAJOR="${BASH_REMATCH[1]}"
+  HUMAN_MINOR="${BASH_REMATCH[2]}"
+  CIA_MAJOR="${HUMAN_MAJOR}"
+  CIA_MINOR=$(( HUMAN_MINOR * 16 ))
+  CIA_MICRO=0
 else
   echo "Unsupported 3DS version format for CIA title version: ${VERSION}" >&2
   exit 1
