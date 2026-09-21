@@ -8,6 +8,7 @@
 #include "port_ppu.h"
 #include "port_rom.h"
 #include "port_types.h"
+#include "port_softslots.h"
 #include "platform_3ds.h"
 #include <math.h>
 #include <setjmp.h>
@@ -764,7 +765,15 @@ void VBlankIntrWait(void) {
             Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
         }
     }
-    gba_write16(REG_ADDR_KEYINPUT, Platform3DS_ReadKeyInput());
+    /* The 3DS has its own frame/input path and does not execute
+     * Port_UpdateInput(), so keep soft-slot state in sync here before
+     * KEYINPUT is committed. When a mapped ITEM button is held, expose it
+     * through the regular B-button path; playerUtils.c swaps only the
+     * effective B item, leaving the visible A/B equipment untouched. */
+    Port_SoftSlots_Update();
+    u16 keyinput = Platform3DS_ReadKeyInput();
+    if (Port_SoftSlots_IsBHeld()) keyinput &= ~B_BUTTON;
+    gba_write16(REG_ADDR_KEYINPUT, keyinput);
     {
         extern void Port_QuickSave_AutoTick(void);
         Port_QuickSave_AutoTick();
