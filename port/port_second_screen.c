@@ -156,6 +156,10 @@ enum {
     SS_ACT_SETTINGS_BACK,
     SS_ACT_CONTROL_ACTION,
     SS_ACT_CONTROL_ITEM,
+    SS_ACT_CONTROL_CHOOSE_ACTION,
+    SS_ACT_CONTROL_CHOOSE_ITEM,
+    SS_ACT_CONTROL_ITEM_PREV,
+    SS_ACT_CONTROL_ITEM_NEXT,
     SS_ACT_DEVELOPER_DUMP,
     SS_ACT_DEVELOPER_LOAD,
     SS_ACT_DEVELOPER_STATES,
@@ -184,6 +188,8 @@ enum {
     SS_SETTINGS_SCREEN,
     SS_SETTINGS_GAMEPLAY,
     SS_SETTINGS_CONTROLS,
+    SS_SETTINGS_CONTROL_ACTION,
+    SS_SETTINGS_CONTROL_ITEM,
     SS_SETTINGS_QOL,
     SS_SETTINGS_DEVELOPER,
     SS_SETTINGS_STATES,
@@ -296,6 +302,8 @@ static struct {
     uint8_t tab;
     uint8_t settingsPage;
     uint8_t retroAchievementPage;
+    uint8_t controlButton;
+    uint8_t controlItemPage;
     uint8_t wholeMap;   /* map tab: whole-Hyrule view instead of follow cam */
     uint8_t armedRing;  /* 0 none, 1 = next item tap assigns A, 2 = B */
     int8_t floorPreview; /* plaque-selected display floor, SS_NO_FLOOR = live */
@@ -2050,6 +2058,8 @@ static const char* SettingsPageTitle(int page) {
         case SS_SETTINGS_SCREEN: return UiText3("TELA", "DISPLAY", "PANTALLA");
         case SS_SETTINGS_GAMEPLAY: return UiText3("JOGO", "GAMEPLAY", "JUEGO");
         case SS_SETTINGS_CONTROLS: return UiText3("CONTROLES", "CONTROLS", "CONTROLES");
+        case SS_SETTINGS_CONTROL_ACTION: return UiText3("ESCOLHER AÇÃO", "CHOOSE ACTION", "ELEGIR ACCIÓN");
+        case SS_SETTINGS_CONTROL_ITEM: return UiText3("ESCOLHER ITEM", "CHOOSE ITEM", "ELEGIR OBJETO");
         case SS_SETTINGS_QOL: return UiText3("QUALIDADE DE VIDA", "QUALITY OF LIFE", "CALIDAD DE VIDA");
         case SS_SETTINGS_DEVELOPER: return UiText3("DESENVOLVEDOR", "DEVELOPER", "DESARROLLADOR");
         case SS_SETTINGS_STATES: return "SAVE STATES";
@@ -2067,6 +2077,7 @@ static const char* SettingsPageTitle(int page) {
 static int SettingsBackPage(int page) {
     if (page == SS_SETTINGS_STATES) return SS_SETTINGS_DEVELOPER;
     if (page == SS_SETTINGS_RETRO_LIST) return SS_SETTINGS_RETROACHIEVEMENTS;
+    if (page == SS_SETTINGS_CONTROL_ACTION || page == SS_SETTINGS_CONTROL_ITEM) return SS_SETTINGS_CONTROLS;
     return page == SS_SETTINGS_OVERLAY ? SS_SETTINGS_DEVELOPER : SS_SETTINGS_ROOT;
 }
 
@@ -2459,7 +2470,7 @@ static void PaintControlsPanel(const SSurf* s, TargetList* tl, float x0, float y
     if (rowH > 86 * u) rowH = 86 * u;
     for (int button = 0; button < count; ++button) {
         const float ry = y0 + button * (rowH + gap);
-        const float split = x0 + (x1 - x0) * 0.64f;
+        const float split = x0 + (x1 - x0) * 0.62f;
         const int action = Port_Config_Get3DSButtonAction(button);
         DrawMenuButton(s, x0, ry, x1, ry + rowH, "", 0, 0, u, ts);
         int32_t ms = (int32_t)(1.75f * u);
@@ -2476,14 +2487,94 @@ static void PaintControlsPanel(const SSurf* s, TargetList* tl, float x0, float y
             const uint8_t item = Port_SoftSlots_GetAssignment(button);
             const char* itemName = Port_SoftSlots_GetItemName(item);
             int32_t ims = ms;
-            while (ims > 1 && MenuTextWidth(itemName, ims) > (int32_t)(x1 - split - 14 * u)) --ims;
-            MenuTextDraw(s, itemName, (int32_t)(x1 - 10 * u - MenuTextWidth(itemName, ims)),
+            while (ims > 1 && MenuTextWidth(itemName, ims) > (int32_t)(x1 - split - 24 * u)) --ims;
+            MenuTextDraw(s, itemName, (int32_t)(x1 - 28 * u - MenuTextWidth(itemName, ims)),
                          (int32_t)((ry + ry + rowH) / 2 - 8 * ims), ims, SS_TEXT_NAVY);
+            DrawSettingsChevron(s, x1 - 14 * u, (ry + ry + rowH) / 2, u);
             AddTarget(tl, split, ry, x1, ry + rowH, SS_ACT_CONTROL_ITEM, (uint8_t)button);
         } else {
             DrawSettingsChevron(s, x1 - 24 * u, (ry + ry + rowH) / 2, u);
             AddTarget(tl, split, ry, x1, ry + rowH, SS_ACT_CONTROL_ACTION, (uint8_t)button);
         }
+    }
+}
+
+static void PaintControlActionPanel(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1,
+                                    float u, int32_t ts, int button) {
+    const int count = PORT_3DS_ACTION_COUNT;
+    const float gap = 6 * u;
+    float rowH = (y1 - y0 - (count - 1) * gap) / count;
+    if (rowH > 72 * u) rowH = 72 * u;
+    for (int action = 0; action < count; ++action) {
+        const float ry = y0 + action * (rowH + gap);
+        const int selected = Port_Config_Get3DSButtonAction(button) == action;
+        DrawMenuButton(s, x0, ry, x1, ry + rowH, "", 0, 0, u, ts);
+        int32_t ms = (int32_t)(1.65f * u);
+        if (ms < 1) ms = 1;
+        const char* label = ControlActionLabel(action);
+        MenuTextDraw(s, label, (int32_t)(x0 + 18 * u),
+                     (int32_t)((ry + ry + rowH) / 2 - 8 * ms), ms,
+                     selected ? SS_TEXT_RED : SS_TEXT_NAVY);
+        if (selected) {
+            MenuTextDraw(s, "OK", (int32_t)(x1 - 18 * u - MenuTextWidth("OK", ms)),
+                         (int32_t)((ry + ry + rowH) / 2 - 8 * ms), ms, SS_TEXT_RED);
+        }
+        AddTarget(tl, x0, ry, x1, ry + rowH, SS_ACT_CONTROL_CHOOSE_ACTION, (uint8_t)action);
+    }
+}
+
+static void PaintControlItemPanel(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1,
+                                  float u, int32_t ts, int button, int page) {
+    enum { ITEMS_PER_PAGE = 4 };
+    const int owned = Port_SoftSlots_GetOwnedItemCount();
+    const int pages = owned > 0 ? (owned + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE : 1;
+    if (page < 0) page = 0;
+    if (page >= pages) page = pages - 1;
+
+    if (owned <= 0) {
+        DrawMenuButton(s, x0, y0, x1, y0 + 74 * u, UiText3("NENHUM ITEM DISPONÍVEL", "NO ITEMS AVAILABLE", "NINGÚN OBJETO DISPONIBLE"),
+                       0, 0, u, ts);
+        return;
+    }
+
+    const float navH = pages > 1 ? 54 * u : 0;
+    const float navGap = pages > 1 ? 8 * u : 0;
+    const float listBottom = y1 - navH - navGap;
+    const int first = page * ITEMS_PER_PAGE;
+    int visible = owned - first;
+    if (visible > ITEMS_PER_PAGE) visible = ITEMS_PER_PAGE;
+    const float gap = 7 * u;
+    float rowH = (listBottom - y0 - (visible - 1) * gap) / visible;
+    if (rowH > 82 * u) rowH = 82 * u;
+
+    const uint8_t selectedItem = Port_SoftSlots_GetAssignment(button);
+    for (int i = 0; i < visible; ++i) {
+        const uint8_t item = Port_SoftSlots_GetOwnedItemId(first + i);
+        const char* label = Port_SoftSlots_GetItemName(item);
+        const float ry = y0 + i * (rowH + gap);
+        DrawMenuButton(s, x0, ry, x1, ry + rowH, "", 0, 0, u, ts);
+        int32_t ms = (int32_t)(1.55f * u);
+        if (ms < 1) ms = 1;
+        while (ms > 1 && MenuTextWidth(label, ms) > (int32_t)(x1 - x0 - 70 * u)) --ms;
+        MenuTextDraw(s, label, (int32_t)(x0 + 18 * u),
+                     (int32_t)((ry + ry + rowH) / 2 - 8 * ms), ms,
+                     item == selectedItem ? SS_TEXT_RED : SS_TEXT_NAVY);
+        if (item == selectedItem) {
+            MenuTextDraw(s, "OK", (int32_t)(x1 - 18 * u - MenuTextWidth("OK", ms)),
+                         (int32_t)((ry + ry + rowH) / 2 - 8 * ms), ms, SS_TEXT_RED);
+        }
+        AddTarget(tl, x0, ry, x1, ry + rowH, SS_ACT_CONTROL_CHOOSE_ITEM, item);
+    }
+
+    if (pages > 1) {
+        const float ny = y1 - navH;
+        const float mid = (x0 + x1) * 0.5f;
+        DrawMenuButton(s, x0, ny, mid - 3 * u, y1,
+                       page > 0 ? UiText3("ANTERIOR", "PREVIOUS", "ANTERIOR") : "-", 0, 0, u, ts);
+        DrawMenuButton(s, mid + 3 * u, ny, x1, y1,
+                       page + 1 < pages ? UiText3("PRÓXIMO", "NEXT", "SIGUIENTE") : "-", 0, 0, u, ts);
+        if (page > 0) AddTarget(tl, x0, ny, mid - 3 * u, y1, SS_ACT_CONTROL_ITEM_PREV, 0);
+        if (page + 1 < pages) AddTarget(tl, mid + 3 * u, ny, x1, y1, SS_ACT_CONTROL_ITEM_NEXT, 0);
     }
 }
 #endif
@@ -2543,6 +2634,14 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
 #ifdef TMC_3DS
     if (page == SS_SETTINGS_CONTROLS) {
         PaintControlsPanel(s, tl, x0, y0, x1, iy1, u, ts);
+        return;
+    }
+    if (page == SS_SETTINGS_CONTROL_ACTION) {
+        PaintControlActionPanel(s, tl, x0, y0, x1, iy1, u, ts, sUi.controlButton);
+        return;
+    }
+    if (page == SS_SETTINGS_CONTROL_ITEM) {
+        PaintControlItemPanel(s, tl, x0, y0, x1, iy1, u, ts, sUi.controlButton, sUi.controlItemPage);
         return;
     }
 
@@ -3505,15 +3604,56 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
         case SS_ACT_CONTROL_ACTION:
 #ifdef TMC_3DS
-            Port_Config_Cycle3DSButtonAction(hit.arg);
-            if (Port_Config_Get3DSButtonAction(hit.arg) == PORT_3DS_ACTION_ITEM &&
-                Port_SoftSlots_GetAssignment(hit.arg) == 0)
-                Port_SoftSlots_CycleAssignment(hit.arg, 1);
+            UI_LOCK();
+            sUi.controlButton = hit.arg;
+            sUi.settingsPage = SS_SETTINGS_CONTROL_ACTION;
+            UI_UNLOCK();
 #endif
             break;
         case SS_ACT_CONTROL_ITEM:
 #ifdef TMC_3DS
-            Port_SoftSlots_CycleAssignment(hit.arg, 1);
+            UI_LOCK();
+            sUi.controlButton = hit.arg;
+            sUi.controlItemPage = 0;
+            sUi.settingsPage = SS_SETTINGS_CONTROL_ITEM;
+            UI_UNLOCK();
+#endif
+            break;
+        case SS_ACT_CONTROL_CHOOSE_ACTION:
+#ifdef TMC_3DS
+            Port_Config_Set3DSButtonAction(sUi.controlButton, hit.arg);
+            if (hit.arg == PORT_3DS_ACTION_ITEM) {
+                UI_LOCK();
+                sUi.controlItemPage = 0;
+                sUi.settingsPage = SS_SETTINGS_CONTROL_ITEM;
+                UI_UNLOCK();
+            } else {
+                UI_LOCK();
+                sUi.settingsPage = SS_SETTINGS_CONTROLS;
+                UI_UNLOCK();
+            }
+#endif
+            break;
+        case SS_ACT_CONTROL_CHOOSE_ITEM:
+#ifdef TMC_3DS
+            Port_SoftSlots_SetAssignment(sUi.controlButton, hit.arg);
+            UI_LOCK();
+            sUi.settingsPage = SS_SETTINGS_CONTROLS;
+            UI_UNLOCK();
+#endif
+            break;
+        case SS_ACT_CONTROL_ITEM_PREV:
+#ifdef TMC_3DS
+            UI_LOCK();
+            if (sUi.controlItemPage > 0) --sUi.controlItemPage;
+            UI_UNLOCK();
+#endif
+            break;
+        case SS_ACT_CONTROL_ITEM_NEXT:
+#ifdef TMC_3DS
+            UI_LOCK();
+            ++sUi.controlItemPage;
+            UI_UNLOCK();
 #endif
             break;
         case SS_ACT_DEVELOPER_DUMP:
