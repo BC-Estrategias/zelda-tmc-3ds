@@ -2,7 +2,7 @@
 #define PORT_SOFTSLOTS_H
 
 /*
- * Soft item slots — extra equip buttons (X / Y / L2 / R2) for the PC port.
+ * Soft item slots — extra equip buttons (X / Y / ZL / ZR / C-Stick) for the PC port.
  *
  * The GBA only had A and B, so item dispatch in src/playerUtils.c reads
  * gSave.stats.equipped[SLOT_A/B] each frame. With a PC controller (or
@@ -20,11 +20,11 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PORT_SOFTSLOT_COUNT 4
+#define PORT_SOFTSLOT_COUNT 5
 
 void Port_SoftSlots_Init(void);
 
-/* Polled once per frame from Port_UpdateInput. Reads the four soft-slot
+/* Polled once per frame from Port_UpdateInput. Reads the soft-slot
  * inputs and decides which (if any) is the current active slot. */
 void Port_SoftSlots_Update(void);
 
