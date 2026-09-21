@@ -1,10 +1,10 @@
 /*
- * port_softslots.c — Extra item-equip buttons (X / Y / L2 / R2).
+ * port_softslots.c — Extra item-equip buttons (X / Y / ZL / ZR / C-Stick).
  *
  * Engine dispatch path (src/playerUtils.c:UpdateActiveItems) reads
  *   gSave.stats.equipped[SLOT_B] and INPUT_USE_ITEM2 each frame.
- * To add four extra equip buttons without touching the save format we:
- *   1. Each frame, scan the four soft-slot inputs. The most recently
+ * To add five extra equip buttons without touching the save format we:
+ *   1. Each frame, scan the soft-slot inputs. The most recently
  *      pressed slot with an assigned item wins (sticky while held).
  *   2. While a slot is active, port_bios.c forces B_BUTTON pressed in the
  *      GBA KEYINPUT register so the engine produces an INPUT_USE_ITEM2
@@ -50,7 +50,8 @@ struct PortSoftSlotItemMeta { unsigned char menuSlot; unsigned char rest[7]; };
 extern const struct PortSoftSlotItemMeta gItemMetaData[];
 
 #define SOFTSLOT_FILENAME "tmc.softslots"
-static const char SOFTSLOT_MAGIC[6] = { 'T', 'M', 'C', 'S', 'S', '1' };
+static const char SOFTSLOT_MAGIC[6] = { 'T', 'M', 'C', 'S', 'S', '2' };
+static const char SOFTSLOT_MAGIC_V1[6] = { 'T', 'M', 'C', 'S', 'S', '1' };
 
 static uint8_t sAssignments[PORT_SOFTSLOT_COUNT];
 static int sActiveSlot = -1;
@@ -61,8 +62,9 @@ const char* Port_SoftSlots_SlotName(int slot) {
     switch (slot) {
         case 0: return "X";
         case 1: return "Y";
-        case 2: return "L2";
-        case 3: return "R2";
+        case 2: return "ZL";
+        case 3: return "ZR";
+        case 4: return "C-STICK";
         default: return "?";
     }
 }
@@ -76,7 +78,7 @@ void Port_SoftSlots_Init(void) {
 void Port_SoftSlots_Update(void) {
     Port_SoftSlots_Init();
 
-    static bool sPrevHeld[PORT_SOFTSLOT_COUNT] = { false, false, false, false };
+    static bool sPrevHeld[PORT_SOFTSLOT_COUNT] = { false };
     bool nowHeld[PORT_SOFTSLOT_COUNT];
     int newlyPressed = -1;
 
@@ -141,10 +143,16 @@ void Port_SoftSlots_Load(void) {
     FILE* f = fopen(SOFTSLOT_FILENAME, "rb");
     if (!f) return;
     char magic[sizeof(SOFTSLOT_MAGIC)];
-    if (fread(magic, 1, sizeof(magic), f) == sizeof(magic) &&
-        memcmp(magic, SOFTSLOT_MAGIC, sizeof(magic)) == 0) {
-        if (fread(sAssignments, 1, sizeof(sAssignments), f) != sizeof(sAssignments)) {
-            memset(sAssignments, 0, sizeof(sAssignments));
+    if (fread(magic, 1, sizeof(magic), f) == sizeof(magic)) {
+        if (memcmp(magic, SOFTSLOT_MAGIC, sizeof(magic)) == 0) {
+            if (fread(sAssignments, 1, sizeof(sAssignments), f) != sizeof(sAssignments))
+                memset(sAssignments, 0, sizeof(sAssignments));
+        } else if (memcmp(magic, SOFTSLOT_MAGIC_V1, sizeof(magic)) == 0) {
+            /* v1 stored X/Y/L2/R2 only. Preserve those four assignments and
+             * leave the new C-Stick slot unassigned. */
+            uint8_t legacy[4] = {0};
+            if (fread(legacy, 1, sizeof(legacy), f) == sizeof(legacy))
+                memcpy(sAssignments, legacy, sizeof(legacy));
         }
     }
     fclose(f);
