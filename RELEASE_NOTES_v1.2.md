@@ -1,6 +1,6 @@
 # v1.2
 
-Stable release of the configurable-controls update for The Minish Cap 3DS.
+Stable v1.2 release of the configurable-controls update for The Minish Cap 3DS.
 
 ## Highlights
 
