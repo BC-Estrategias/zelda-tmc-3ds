@@ -47,6 +47,13 @@ int main(int argc,char **argv) {
  r=json_array();assert(parse(r,true,false,&out)==0);
  json_array_append_new(r,make("v3.2-E2",true,false));json_array_append_new(r,make("v3.2-E10",true,false));
  json_array_append_new(r,make("v3.3",false,false));assert(parse(r,true,false,&out)==1&&!strcmp(out.version,"v3.2-E10"));json_decref(r);
+ r=json_array();
+ json_t *broken=make("v3.2-E3",true,false);
+ json_t *broken_asset=json_array_get(json_object_get(broken,"assets"),0);
+ json_object_set_new(broken_asset,"digest",json_string("sha256:bad"));
+ json_array_append_new(r,broken);
+ json_array_append_new(r,make("v3.2-E11",true,false));
+ assert(parse(r,true,false,&out)==1&&!strcmp(out.version,"v3.2-E11"));json_decref(r);
  r=make("v3.1",false,true);assert(parse(r,false,true,&out)==1);json_decref(r);
  assert(Update_ParseRelease("{}garbage",9,false,false,&out)==-1);
  assert(Update_ParseRelease("{\"draft\":false,\"draft\":true}",28,false,false,&out)==-1);
