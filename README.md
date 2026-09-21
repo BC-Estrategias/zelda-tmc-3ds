@@ -84,11 +84,11 @@ O Project Picori Randomizer também está integrado ao menu do 3DS, com perfil d
 
 ### Desempenho e hardware
 
-A build estável atual é voltada ao **New Nintendo 3DS / New Nintendo 2DS XL**.
+A build estável roda tanto no **New Nintendo 3DS / New Nintendo 2DS XL** quanto no **Old Nintendo 3DS / Nintendo 2DS**.
 
-Ela usa os recursos extras desse hardware, incluindo modo de 804 MHz, cache L2, núcleo adicional e o caminho acelerado de apresentação disponível para o port.
+**New Nintendo 3DS / New Nintendo 2DS XL:** usa os recursos extras do hardware, incluindo modo de 804 MHz, cache L2, núcleo adicional e o caminho acelerado de apresentação. O **Full View 400×240** fica disponível nas áreas compatíveis.
 
-O **Old Nintendo 3DS / 2DS não é suportado por esta build estável**.
+**Old Nintendo 3DS / Nintendo 2DS:** roda o port normalmente com o perfil compatível do aparelho, mas **sem Full View**. Os modos de apresentação tradicionais continuam disponíveis.
 
 ## Modos de imagem
 
