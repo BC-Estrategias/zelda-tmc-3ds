@@ -27,4 +27,6 @@ Esta build estável é voltada ao **New Nintendo 3DS / New Nintendo 2DS XL**.
 
 Quem estiver na v1.1-E6 pode atualizar para a v1.1 pelo próprio updater escolhendo o canal **Stable / Estável**.
 
+Esta release foi promovida a partir da E6 validada em hardware, sem alterações de gameplay.
+
 A ROM original não está incluída.
