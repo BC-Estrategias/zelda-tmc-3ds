@@ -54,6 +54,7 @@
 #include "port_second_screen_worldmap.h"
 
 #include "port_runtime_config.h"
+#include "port_softslots.h"
 #include "port_widescreen.h" /* PORT_VIEW_WIDTH: whether this build has a wide path at all */
 
 #include <math.h>
@@ -153,6 +154,8 @@ enum {
     SS_ACT_QUESTVIEW, /* arg: which quest screen to show */
     SS_ACT_SETTINGS_PAGE,
     SS_ACT_SETTINGS_BACK,
+    SS_ACT_CONTROL_ACTION,
+    SS_ACT_CONTROL_ITEM,
     SS_ACT_DEVELOPER_DUMP,
     SS_ACT_DEVELOPER_LOAD,
     SS_ACT_DEVELOPER_STATES,
@@ -180,6 +183,7 @@ enum {
     SS_SETTINGS_ROOT = 0,
     SS_SETTINGS_SCREEN,
     SS_SETTINGS_GAMEPLAY,
+    SS_SETTINGS_CONTROLS,
     SS_SETTINGS_QOL,
     SS_SETTINGS_DEVELOPER,
     SS_SETTINGS_STATES,
@@ -2045,6 +2049,7 @@ static const char* SettingsPageTitle(int page) {
     switch (page) {
         case SS_SETTINGS_SCREEN: return UiText3("TELA", "DISPLAY", "PANTALLA");
         case SS_SETTINGS_GAMEPLAY: return UiText3("JOGO", "GAMEPLAY", "JUEGO");
+        case SS_SETTINGS_CONTROLS: return UiText3("CONTROLES", "CONTROLS", "CONTROLES");
         case SS_SETTINGS_QOL: return UiText3("QUALIDADE DE VIDA", "QUALITY OF LIFE", "CALIDAD DE VIDA");
         case SS_SETTINGS_DEVELOPER: return UiText3("DESENVOLVEDOR", "DEVELOPER", "DESARROLLADOR");
         case SS_SETTINGS_STATES: return "SAVE STATES";
@@ -2429,6 +2434,60 @@ static int GetSettingState(int row, char* out, int outCap) {
 #include "../platform/3ds/source/update_ui_3ds.inc"
 #endif
 
+#ifdef TMC_3DS
+static const char* ControlButtonLabel(int button) {
+    static const char* const names[PORT_3DS_MAP_COUNT] = { "X", "Y", "ZL", "ZR", "C-STICK" };
+    return (button >= 0 && button < PORT_3DS_MAP_COUNT) ? names[button] : "?";
+}
+
+static const char* ControlActionLabel(int action) {
+    switch (action) {
+        case PORT_3DS_ACTION_TABS: return UiText3("ABAS", "TABS", "PESTAÑAS");
+        case PORT_3DS_ACTION_TURBO: return "TURBO";
+        case PORT_3DS_ACTION_ITEM: return UiText3("ITEM", "ITEM", "OBJETO");
+        case PORT_3DS_ACTION_SAVE_STATE: return "SAVE";
+        case PORT_3DS_ACTION_LOAD_STATE: return "LOAD";
+        default: return UiText3("NENHUM", "NONE", "NINGUNO");
+    }
+}
+
+static void PaintControlsPanel(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1,
+                               float u, int32_t ts) {
+    const int count = Platform3DS_IsNew3DS() ? PORT_3DS_MAP_COUNT : 2;
+    const float gap = 8 * u;
+    float rowH = (y1 - y0 - (count - 1) * gap) / count;
+    if (rowH > 86 * u) rowH = 86 * u;
+    for (int button = 0; button < count; ++button) {
+        const float ry = y0 + button * (rowH + gap);
+        const float split = x0 + (x1 - x0) * 0.64f;
+        const int action = Port_Config_Get3DSButtonAction(button);
+        DrawMenuButton(s, x0, ry, x1, ry + rowH, "", 0, 0, u, ts);
+        int32_t ms = (int32_t)(1.75f * u);
+        if (ms < 1) ms = 1;
+        MenuTextDraw(s, ControlButtonLabel(button), (int32_t)(x0 + 18 * u),
+                     (int32_t)((ry + ry + rowH) / 2 - 8 * ms), ms, SS_TEXT_NAVY);
+
+        const char* actionText = ControlActionLabel(action);
+        MenuTextDraw(s, actionText, (int32_t)(split - MenuTextWidth(actionText, ms) - 8 * u),
+                     (int32_t)((ry + ry + rowH) / 2 - 8 * ms), ms, SS_TEXT_RED);
+        AddTarget(tl, x0, ry, split, ry + rowH, SS_ACT_CONTROL_ACTION, (uint8_t)button);
+
+        if (action == PORT_3DS_ACTION_ITEM) {
+            const uint8_t item = Port_SoftSlots_GetAssignment(button);
+            const char* itemName = Port_SoftSlots_GetItemName(item);
+            int32_t ims = ms;
+            while (ims > 1 && MenuTextWidth(itemName, ims) > (int32_t)(x1 - split - 14 * u)) --ims;
+            MenuTextDraw(s, itemName, (int32_t)(x1 - 10 * u - MenuTextWidth(itemName, ims)),
+                         (int32_t)((ry + ry + rowH) / 2 - 8 * ims), ims, SS_TEXT_NAVY);
+            AddTarget(tl, split, ry, x1, ry + rowH, SS_ACT_CONTROL_ITEM, (uint8_t)button);
+        } else {
+            DrawSettingsChevron(s, x1 - 24 * u, (ry + ry + rowH) / 2, u);
+            AddTarget(tl, split, ry, x1, ry + rowH, SS_ACT_CONTROL_ACTION, (uint8_t)button);
+        }
+    }
+}
+#endif
+
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0,
                                float ry0, float rx1, float ry1, float u, int32_t ts, int page, uint32_t tick,
                                uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil, int loadStateResult,
@@ -2451,20 +2510,21 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     float y0 = iy0 + headerH + 12 * u;
     if (page == SS_SETTINGS_ROOT) {
 #ifdef TMC_3DS
-        const char* labels[7] = {
+        const char* labels[8] = {
             UiText3("TELA", "DISPLAY", "PANTALLA"),
             UiText3("JOGO", "GAMEPLAY", "JUEGO"),
+            UiText3("CONTROLES", "CONTROLS", "CONTROLES"),
             UiText3("QUAL. VIDA", "QUALITY", "CALIDAD"),
             UiText3("CONQUISTAS", "ACHIEVEMENTS", "LOGROS"),
             UiText3("ATUALIZAÇÃO", "UPDATE", "ACTUALIZACIÓN"),
             UiText3("DESENVOLVEDOR", "DEVELOPER", "DESARROLLADOR"),
             UiText3("ALEATORIZADOR", "RANDOMIZER", "ALEATORIZADOR")
         };
-        static const uint8_t pages[7] = {
-            SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_RETROACHIEVEMENTS,
-            SS_SETTINGS_UPDATE, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
+        static const uint8_t pages[8] = {
+            SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_CONTROLS, SS_SETTINGS_QOL,
+            SS_SETTINGS_RETROACHIEVEMENTS, SS_SETTINGS_UPDATE, SS_SETTINGS_DEVELOPER, SS_SETTINGS_RANDOMIZER
         };
-        const int rootRows = 7;
+        const int rootRows = 8;
 #else
         static const char* const labels[4] = { "TELA", "JOGO", "QUAL. VIDA", "DESENVOLVEDOR" };
         static const uint8_t pages[4] = { SS_SETTINGS_SCREEN, SS_SETTINGS_GAMEPLAY, SS_SETTINGS_QOL, SS_SETTINGS_DEVELOPER };
@@ -2481,6 +2541,11 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     }
 
 #ifdef TMC_3DS
+    if (page == SS_SETTINGS_CONTROLS) {
+        PaintControlsPanel(s, tl, x0, y0, x1, iy1, u, ts);
+        return;
+    }
+
     if (page == SS_SETTINGS_UPDATE) {
         PaintUpdatePanel(s, tl, x0, y0, x1, iy1, u, ts);
         return;
@@ -3437,6 +3502,19 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_LOCK();
             sUi.settingsPage = hit.arg;
             UI_UNLOCK();
+            break;
+        case SS_ACT_CONTROL_ACTION:
+#ifdef TMC_3DS
+            Port_Config_Cycle3DSButtonAction(hit.arg);
+            if (Port_Config_Get3DSButtonAction(hit.arg) == PORT_3DS_ACTION_ITEM &&
+                Port_SoftSlots_GetAssignment(hit.arg) == 0)
+                Port_SoftSlots_CycleAssignment(hit.arg, 1);
+#endif
+            break;
+        case SS_ACT_CONTROL_ITEM:
+#ifdef TMC_3DS
+            Port_SoftSlots_CycleAssignment(hit.arg, 1);
+#endif
             break;
         case SS_ACT_DEVELOPER_DUMP:
             UI_LOCK();
