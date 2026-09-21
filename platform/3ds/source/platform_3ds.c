@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include "port_runtime_config.h"
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
 #include "platform_gpu_3ds.h"
