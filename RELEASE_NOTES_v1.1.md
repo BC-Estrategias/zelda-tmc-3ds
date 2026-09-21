@@ -21,7 +21,9 @@ Primeira release estável da série 1.1.
 
 ## Hardware
 
-Esta build estável é voltada ao **New Nintendo 3DS / New Nintendo 2DS XL**.
+A build estável roda em **New Nintendo 3DS / New Nintendo 2DS XL** e também em **Old Nintendo 3DS / Nintendo 2DS**.
+
+O **Full View 400×240** é exclusivo do New 3DS/New 2DS XL. No Old 3DS/2DS, o jogo usa o caminho compatível sem Full View.
 
 ## Atualização
 
