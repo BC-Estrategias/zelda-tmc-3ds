@@ -202,6 +202,10 @@ static const char* ItemDisplayName(uint8_t id) {
     return "?";
 }
 
+const char* Port_SoftSlots_GetItemName(uint8_t itemId) {
+    return ItemDisplayName(itemId);
+}
+
 const char* Port_SoftSlots_GetSlotLabel(int slot) {
     static char buf[64];
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return "?";
