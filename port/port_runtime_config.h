@@ -424,7 +424,7 @@ bool Port_Config_InputPressed(PortInput input);
 void Port_Config_CloseGamepads(void);
 
 bool Port_Config_InputEdgePressed(PortInput input);
-/* Soft-slot input poll, indexed 0..3 (X, Y, L2, R2). */
+/* Soft-slot input poll, indexed 0..4 (X, Y, ZL, ZR, C-Stick). */
 bool Port_Config_SoftSlotPressed(int slot);
 
 /* Raw left-analog-stick reading from the first attached gamepad, in
