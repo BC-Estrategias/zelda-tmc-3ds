@@ -225,13 +225,29 @@ jobs:
             cp "$NOTES" release-assets/RELEASE_NOTES.md
           else
             {
-              echo "# The Minish Cap 3DS v${VERSION}"
+              echo "# v${VERSION}"
               echo
               echo "Automated 3DS build."
               echo
               echo "The original ROM is not included."
             } > release-assets/RELEASE_NOTES.md
           fi
+
+          {
+            echo
+            echo "## Install with FBI"
+            echo
+            echo 'In FBI: `Remote Install > Scan QR Code`'
+            echo
+            echo '<p align="center">'
+            echo "  <a href=\"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}.cia\">"
+            echo "    <img width=\"320\" alt=\"FBI QR Code for v${VERSION}\" src=\"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}-qr.png\" />"
+            echo "  </a>"
+            echo "</p>"
+            echo
+            echo "- [Download CIA](https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}.cia)"
+            echo "- [Download 3DSX](https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/tmc-3ds-v${VERSION}.3dsx)"
+          } >> release-assets/RELEASE_NOTES.md
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -275,7 +291,10 @@ jobs:
             case "${tag}" in
               v*-E*)
                 echo "Removing prerelease ${tag}"
-                gh release delete "${tag}" --cleanup-tag --yes --repo "${GITHUB_REPOSITORY}"
+                if ! gh release delete "${tag}" --cleanup-tag --yes --repo "${GITHUB_REPOSITORY}"; then
+                  echo "Release ${tag} was already absent; cleaning tag if present."
+                  gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" 2>/dev/null || true
+                fi
                 ;;
             esac
           done
