@@ -2682,8 +2682,8 @@ static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, 
     int32_t titleScale = (int32_t)(2.2f * u);
     if (titleScale < 1) titleScale = 1;
     char title[32];
-    if (slot == 0) snprintf(title, sizeof(title), "%s", UiText3("CARREGAR RÁPIDO?", "LOAD QUICK STATE?", "¿CARGAR ESTADO RÁPIDO?"));
-    else snprintf(title, sizeof(title), UiText3("CARREGAR SLOT %d?", "LOAD SLOT %d?", "¿CARGAR SLOT %d?"), slot);
+    if (slot == 0) snprintf(title, sizeof(title), "%s", UiText3("CARREGAR RÁPIDO?", "LOAD QUICK STATE?", "CARGAR ESTADO RÁPIDO?"));
+    else snprintf(title, sizeof(title), UiText3("CARREGAR SLOT %d?", "LOAD SLOT %d?", "CARGAR SLOT %d?"), slot);
     MenuTextCentered(s, title, s->w / 2.0f, layout.titleY, titleScale, SS_TEXT_NAVY);
 
     const char* lines[] = {
