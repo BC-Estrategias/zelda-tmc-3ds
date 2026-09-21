@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'prerelease/**'
+      - 'release/**'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -113,7 +114,7 @@ jobs:
           ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
           if { [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_release }}" = "true" ]; } || \
-             { [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/heads/prerelease/* ]] && [[ "${{ github.event.head_commit.message }}" == release:* ]]; }; then
+             { [ "${{ github.event_name }}" = "push" ] && { [[ "${{ github.ref }}" == refs/heads/prerelease/* ]] || [[ "${{ github.ref }}" == refs/heads/release/* ]]; } && [[ "${{ github.event.head_commit.message }}" == release:* ]]; }; then
             test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
           fi
 
@@ -165,7 +166,8 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish_release) ||
       (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/heads/prerelease/') &&
+       (startsWith(github.ref, 'refs/heads/prerelease/') ||
+        startsWith(github.ref, 'refs/heads/release/')) &&
        startsWith(github.event.head_commit.message, 'release:'))
     needs: [build, manifest-tests]
     runs-on: ubuntu-latest
