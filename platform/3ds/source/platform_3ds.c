@@ -205,9 +205,27 @@ bool Platform3DS_IsRunning(void) { return sRunning; }
 bool Platform3DS_IsNew3DS(void) { return sIsNew3DS; }
 bool Platform3DS_CanUseCore1(void) { return sCore1Available; }
 unsigned Platform3DS_Core1TimeLimit(void) { return sCore1TimeLimit; }
-/* C-Stick remains the original analogue turbo gesture; ZR is the convenient
- * digital equivalent for New 3DS hardware. */
-bool Platform3DS_TurboHeld(void) { return sIsNew3DS && (sCStickHeld || (sHeld & KEY_ZR) != 0u); }
+bool Platform3DS_CStickHeld(void) { return sIsNew3DS && sCStickHeld; }
+
+static bool MappedButtonHeld(int button) {
+    if (!sIsNew3DS && button >= PORT_3DS_MAP_ZL) return false;
+    switch (button) {
+        case PORT_3DS_MAP_X: return (sHeld & KEY_X) != 0u;
+        case PORT_3DS_MAP_Y: return (sHeld & KEY_Y) != 0u;
+        case PORT_3DS_MAP_ZL: return (sHeld & KEY_ZL) != 0u;
+        case PORT_3DS_MAP_ZR: return (sHeld & KEY_ZR) != 0u;
+        case PORT_3DS_MAP_CSTICK: return sCStickHeld;
+        default: return false;
+    }
+}
+
+bool Platform3DS_TurboHeld(void) {
+    if (!sRunning) return false;
+    for (int button = 0; button < PORT_3DS_MAP_COUNT; ++button)
+        if (Port_Config_Get3DSButtonAction(button) == PORT_3DS_ACTION_TURBO && MappedButtonHeld(button))
+            return true;
+    return false;
+}
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
 void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
@@ -640,22 +658,34 @@ static void PollInput(void) {
     if (sLoadConfirmButtonConsumed && (sHeld & (KEY_A | KEY_B)) == 0u) {
         sLoadConfirmButtonConsumed = false;
     }
-    const bool stateShortcutHeld = (sHeld & KEY_ZL) != 0u;
-    const bool stateShortcutPressed = stateShortcutHeld && !sStateShortcutWasHeld;
-    /* ZL+X writes only the compact load state at the next safe frame
-     * boundary. ZL+Y opens a confirmation before it can replace state. */
-    const bool saveStateChord = (sDown & KEY_X) != 0u || (stateShortcutPressed && (sHeld & KEY_X) != 0u);
-    const bool loadStateChord = (sDown & KEY_Y) != 0u || (stateShortcutPressed && (sHeld & KEY_Y) != 0u);
-    if (!loadConfirmation && stateShortcutHeld && saveStateChord) {
-        sQuickStateSaveRequested = true;
-    } else if (!loadConfirmation && stateShortcutHeld && loadStateChord) {
-        Port_SecondScreen_3DS_RequestLoadState();
-    }
-    sStateShortcutWasHeld = stateShortcutHeld;
+    const bool cstickPressed = sCStickHeld && !sStateShortcutWasHeld;
+    sStateShortcutWasHeld = sCStickHeld;
 
-    /* X cycles the lower panel without taking focus away from gameplay.
-     * Y is reserved for the roll-attack macro; ZL+Y above remains Load. */
-    if (!loadConfirmation && !stateShortcutHeld && (sDown & KEY_X)) Port_SecondScreen_3DS_CycleTab();
+    if (!loadConfirmation) {
+        const bool pressed[PORT_3DS_MAP_COUNT] = {
+            (sDown & KEY_X) != 0u,
+            (sDown & KEY_Y) != 0u,
+            sIsNew3DS && (sDown & KEY_ZL) != 0u,
+            sIsNew3DS && (sDown & KEY_ZR) != 0u,
+            sIsNew3DS && cstickPressed,
+        };
+        for (int button = 0; button < PORT_3DS_MAP_COUNT; ++button) {
+            if (!pressed[button]) continue;
+            switch (Port_Config_Get3DSButtonAction(button)) {
+                case PORT_3DS_ACTION_TABS:
+                    Port_SecondScreen_3DS_CycleTab();
+                    break;
+                case PORT_3DS_ACTION_SAVE_STATE:
+                    sQuickStateSaveRequested = true;
+                    break;
+                case PORT_3DS_ACTION_LOAD_STATE:
+                    Port_SecondScreen_3DS_RequestLoadState();
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
     const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;
     sQuickDumpComboWasHeld = quickDumpCombo;
