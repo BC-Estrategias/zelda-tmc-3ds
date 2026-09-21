@@ -215,6 +215,22 @@ static bool install_cia(void) {
   }
   rc = AM_FinishCiaInstall(output); started = false;
   ok = R_SUCCEEDED(rc);
+  if (!ok && (u32)rc == 0xD8E08027u) {
+    /* AM rejects a CIA whose internal title-version is not newer than the
+     * installed title. This commonly happens when the updater successfully
+     * installed an update but the still-running process (old binary in RAM)
+     * retries before the user restarts the app. Treat it as complete only
+     * when AM confirms that the installed title is already at least as new
+     * as the downloaded CIA. */
+    const u64 titleId = info.titleID;
+    AM_TitleInfo installed = {0};
+    Result infoRc = AM_GetTitleInfo(MEDIATYPE_SD, 1, (u64*)&titleId, &installed);
+    if (R_SUCCEEDED(infoRc) && installed.titleID == info.titleID && installed.version >= info.version) {
+      UpdateLog("Updater CIA already installed: package=%u installed=%u",
+                (unsigned)info.version, (unsigned)installed.version);
+      ok = true;
+    }
+  }
 done:
   if (started) AM_CancelCIAInstall(output);
   if (input) FSFILE_Close(input);
