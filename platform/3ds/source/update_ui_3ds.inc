@@ -200,11 +200,12 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
     SSurf s={pixels,400,240,stride};
     Port_SecondScreenTheme_DrawBackdrop(pixels,400,240,stride,0,0,400,240,2);
     Port_SecondScreenTheme_DrawPlate(pixels,400,240,stride,4,4,392,232,2);
-    char title[80]; snprintf(title,sizeof(title),notes ? "%s %s" : "%s%s",
-        notes ? UiText3("ALTERAÇÕES", "CHANGELOG", "CAMBIOS") : "",
-        notes ? st.version : "",
-        notes ? "" : UiText3("ATUALIZAÇÃO", "UPDATE", "ACTUALIZACIÓN"),
-        "");
+    char title[80];
+    if (notes) {
+        snprintf(title, sizeof(title), "%s %s", UiText3("ALTERAÇÕES", "CHANGELOG", "CAMBIOS"), st.version);
+    } else {
+        snprintf(title, sizeof(title), "%s", UiText3("ATUALIZAÇÃO", "UPDATE", "ACTUALIZACIÓN"));
+    }
     for(char* c=title;*c;++c) *c=(char)toupper((unsigned char)*c);
     DrawPanelHeaderChip(&s,200,14,title,1,1.0f/3);
     Port_SecondScreenTheme_DrawWell(pixels,400,240,stride,17,47,366,165,1);
