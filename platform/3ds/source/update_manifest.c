@@ -90,7 +90,10 @@ int Update_ParseRelease(const char *data, size_t size, bool pre, bool homebrew, 
     json_array_foreach(root, i, o) {
       if (!json_is_true(json_object_get(o, "prerelease"))) continue;
       UpdateRelease r;
-      if (!candidate(o, true, homebrew, &r)) { result = -1; break; }
+      /* A broken historical pre-release must not hide a newer valid one.
+       * Ignore entries that are incomplete, malformed, or for the wrong
+       * package shape and keep scanning the GitHub releases array. */
+      if (!candidate(o, true, homebrew, &r)) continue;
       if (!result || Update_IsNewer(r.version, out->version)) *out = r;
       result = 1;
     }
